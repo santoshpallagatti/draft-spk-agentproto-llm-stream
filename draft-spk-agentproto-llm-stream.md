@@ -28,10 +28,10 @@ keyword:
  - SSE
  - AI
 venue:
-  group: Agent Communication Protocol
+  group: Agent Communication Protocols
   type: Working Group
   github: santoshpallagatti/draft-spk-agentproto-llm-stream
-  latest: https://Santoshpallagatti.github.io/draft-spk-agentproto-llm-stream/draft-spk-agentproto-llm-stream.html
+  latest: https://santoshpallagatti.github.io/draft-spk-agentproto-llm-stream/draft-spk-agentproto-llm-stream.html
 author:
  -
     fullname: Yaroslav Rosomakho
