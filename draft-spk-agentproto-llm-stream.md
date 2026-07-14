@@ -8,8 +8,8 @@ number:
 date:
 consensus: true
 v: 3
-area: Applications and Real-Time
-workgroup: Agent Communication Protocol
+area: "Applications and Real-Time"
+workgroup: "Agent Communication Protocols"
 keyword:
  - LLM
  - inference
@@ -17,10 +17,10 @@ keyword:
  - SSE
  - AI
 venue:
-  group: Agent Communication Protocols
-  type: Working Group
-  github: santoshpallagatti/draft-spk-agentproto-llm-stream
-  latest: https://santoshpallagatti.github.io/draft-spk-agentproto-llm-stream/draft-spk-agentproto-llm-stream.html
+  group: "Agent Communication Protocols"
+  type: "Working Group"
+  github: "santoshpallagatti/draft-spk-agentproto-llm-stream"
+  latest: "https://santoshpallagatti.github.io/draft-spk-agentproto-llm-stream/draft-spk-agentproto-llm-stream.html"
 author:
  -
     fullname: Yaroslav Rosomakho
@@ -30,7 +30,7 @@ author:
     fullname: Santosh Pallagatti
     organization: "Zscaler"
     email: "santosh.pallagatti@gmail.com"
-    
+
 normative:
   RFC2119:
   RFC8174:
