@@ -30,17 +30,17 @@ keyword:
 venue:
   group: Agent Communication Protocol
   type: Working Group
-  github: AvinashSontakke/draft-spk-agentproto-llm-stream
-  latest: https://AvinashSontakke.github.io/draft-spk-agentproto-llm-stream/draft-spk-agentproto-llm-stream.html
+  github: santoshpallagatti/draft-spk-agentproto-llm-stream
+  latest: https://Santoshpallagatti.github.io/draft-spk-agentproto-llm-stream/draft-spk-agentproto-llm-stream.html
 author:
  -
     fullname: Yaroslav Rosomakho
-    organization: ""
-    email: ""
+    organization: "Zscaler"
+    email: "yrosomakho@zscaler.com"
  -
     fullname: Santosh Pallagatti
-    organization: ""
-    email: ""
+    organization: "Zscaler"
+    email: "santosh.pallagatti@gmail.com"
 
 normative:
   WHATWG-HTML:
