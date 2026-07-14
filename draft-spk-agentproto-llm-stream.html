@@ -1,0 +1,3271 @@
+<!DOCTYPE html>
+<html lang="en" class="Internet-Draft">
+<head>
+<meta charset="utf-8">
+<meta content="Common,Latin" name="scripts">
+<meta content="initial-scale=1.0" name="viewport">
+<title>A Standard Wire Format for Large Language Model Inference Streaming</title>
+<meta content="Yaroslav Rosomakho" name="author">
+<meta content="Santosh Pallagatti" name="author">
+<meta content="
+       Large Language Model (LLM) inference endpoints stream response tokens to clients using a fragmented set of vendor-specific application-layer protocols layered on top of standardized transports (HTTP/2, HTTP/1.1, WebSocket, Server-Sent Events). While these transports carry IETF or W3C standardization, the JSON payload schemas, event taxonomies, and framing conventions used within them are entirely vendor-defined, with no RFCs or common specifications governing them. 
+       This fragmentation imposes costs across the AI ecosystem. Client developers must build vendor-specific parsing into every SDK. LLM vendors face unnecessary integration friction that raises the barrier to customer adoption. Infrastructure providers (CDNs, load balancers, API gateways) must build vendor-specific handling for caching, routing, and observability. Enterprise customers seeking multi-vendor flexibility are forced to maintain custom translation layers. And observability, compliance, and orchestration tooling must be rebuilt for each provider independently. 
+       This document defines a standard wire format for LLM inference streaming over Server-Sent Events (SSE) on HTTP. It specifies a request envelope media type (application/llm-request+json), a response event taxonomy, and a JSON event envelope schema that together enable any participant in the AI ecosystem, including client libraries, LLM vendors, infrastructure providers, orchestration platforms, and observability tools, to handle AI inference traffic using a single, shared protocol contract. 
+       The scope of this document is strictly Client/Application to LLM inference endpoint streaming. Agent-to-tool interaction (e.g., MCP) and agent-to-agent communication are out of scope. 
+    " name="description">
+<meta content="xml2rfc 3.34.0" name="generator">
+<meta content="LLM" name="keyword">
+<meta content="inference" name="keyword">
+<meta content="streaming" name="keyword">
+<meta content="SSE" name="keyword">
+<meta content="AI" name="keyword">
+<meta content="draft-spk-agentproto-llm-stream-latest" name="ietf.draft">
+<!-- Generator version information:
+  xml2rfc 3.34.0
+    Python 3.14.5
+    ConfigArgParse 1.7.5
+    google-i18n-address 3.1.1
+    intervaltree 3.2.1
+    Jinja2 3.1.6
+    lxml 6.1.1
+    natsort 8.4.0
+    platformdirs 4.10.0
+    pycountry 24.6.1
+    PyYAML 6.0.3
+    requests 2.33.1
+    wcwidth 0.8.2
+-->
+<link href="draft-spk-agentproto-llm-stream.xml" rel="alternate" type="application/rfc+xml">
+<link href="#copyright" rel="license">
+<style type="text/css">@font-face {
+  font-family: 'Lora';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Italic'), local('Lora-Italic'), url('https://martinthomson.github.io/rfc-css/fonts/lora-italic-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Italic'), local('Lora-Italic'), url('https://martinthomson.github.io/rfc-css/fonts/lora-italic-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Italic'), local('Lora-Italic'), url('https://martinthomson.github.io/rfc-css/fonts/lora-italic-vietnamese.woff2') format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+1EA0-1EF9, U+20AB;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Italic'), local('Lora-Italic'), url('https://martinthomson.github.io/rfc-css/fonts/lora-italic-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Lora';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Italic'), local('Lora-Italic'), url('https://martinthomson.github.io/rfc-css/fonts/lora-italic-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Regular'), local('Lora-Regular'), url('https://martinthomson.github.io/rfc-css/fonts/lora-regular-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Regular'), local('Lora-Regular'), url('https://martinthomson.github.io/rfc-css/fonts/lora-regular-cyrillic.woff2') format('woff2');
+  unicode-range: U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Regular'), local('Lora-Regular'), url('https://martinthomson.github.io/rfc-css/fonts/lora-regular-vietnamese.woff2') format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+1EA0-1EF9, U+20AB;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Regular'), local('Lora-Regular'), url('https://martinthomson.github.io/rfc-css/fonts/lora-regular-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Regular'), local('Lora-Regular'), url('https://martinthomson.github.io/rfc-css/fonts/lora-regular-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local('Lora Bold'), local('Lora-Bold'), url('https://martinthomson.github.io/rfc-css/fonts/lora-bold-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local('Lora Bold'), local('Lora-Bold'), url('https://martinthomson.github.io/rfc-css/fonts/lora-bold-cyrillic.woff2') format('woff2');
+  unicode-range: U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local('Lora Bold'), local('Lora-Bold'), url('https://martinthomson.github.io/rfc-css/fonts/lora-bold-vietnamese.woff2') format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+1EA0-1EF9, U+20AB;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local('Lora Bold'), local('Lora-Bold'), url('https://martinthomson.github.io/rfc-css/fonts/lora-bold-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local('Lora Bold'), local('Lora-Bold'), url('https://martinthomson.github.io/rfc-css/fonts/lora-bold-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: local('Lora SemiBold'), local('Lora-SemiBold'), url('https://martinthomson.github.io/rfc-css/fonts/lora-semibold-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Oxygen Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Oxygen Mono'), local('OxygenMono-Regular'), url('https://martinthomson.github.io/rfc-css/fonts/oxygenmono-regular-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Oxygen Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Oxygen Mono'), local('OxygenMono-Regular'), url('https://martinthomson.github.io/rfc-css/fonts/oxygenmono-regular-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+}
+
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: italic;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-italic-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: italic;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-italic-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: italic;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-italic-greek.woff2') format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: italic;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-italic-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: italic;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-italic-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: normal;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-regular-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: normal;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-regular-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: normal;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-regular-greek.woff2') format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: normal;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-regular-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: normal;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-regular-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  color-scheme: light dark;
+  --background-color: #fff;
+  --text-color: #222;
+  --title-color: #191919;
+  --link-color: #2a6496;
+  --highlight-color: #f9f9f9;
+  --line-color: #eee;
+  --pilcrow-weak: #ddd;
+  --pilcrow-strong: #bbb;
+  --small-font-size: 14.5px;
+  --font-mono: 'Oxygen Mono', monospace;
+  --font-title: "Sofia Sans Semi Condensed", sans-serif;
+  scrollbar-color: #bbb #eee;
+}
+body {
+  max-width: 600px;
+  margin: 75px auto;
+  padding: 0 5px;
+  color: var(--text-color);
+  background-color: var(--background-color);
+  font: 16px/22px "Lora", serif;
+  scroll-behavior: smooth;
+}
+
+.ears {
+  display: none;
+}
+
+/* headings */
+section {
+  clear: both;
+}
+.section-number {
+  padding-right: 0.5em;
+}
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-title);
+  font-weight: 680;
+  margin: 0.8em 0 0.3em;
+  font-size-adjust: 0.5;
+  color: var(--title-color);
+}
+h1 {
+  &#title {
+    font-size: 32px;
+    line-height: 40px;
+    clear: both;
+    margin: 1.5em 0 0.2em;
+  }
+  &#rfcnum {
+    margin: 1.5em 0 0.2em;
+    & + h1#title {
+      margin: 0.2em 0;
+    }
+  }
+}
+
+h1, h2, h3 {
+  font-size: 22px;
+  line-height: 27px;
+}
+h4, h5, h6 {
+  font-size: 20px;
+  line-height: 24px;
+}
+
+/* general structure */
+.author {
+  padding-bottom: 0.3em;
+  vertical-align: top;
+}
+#abstract+p {
+  font-size: 18px;
+  line-height: 24px;
+  & code, & samp, & tt {
+    font-size: 16px;
+    line-height: 0;
+  }
+}
+
+p {
+  padding: 0;
+  margin: 0.5em 0;
+  text-align: left;
+}
+div {
+  margin: 0;
+}
+.alignRight {
+  margin: 1em 0;
+  &.art-text {
+    background-color: var(--highlight-color);
+    border: 1px solid var(--line-color);
+    border-radius: 3px;
+    padding: 0.5em 1em 0;
+    margin-bottom: 0.5em;
+    & pre {
+      padding: 0;
+      width: auto;
+    }
+  }
+  & > *:first-child {
+    border: none;
+    margin: 0;
+    float: right;
+    clear: both;
+  }
+  & > *:nth-child(2) {
+    clear: both;
+    display: block;
+    border: none;
+  }
+}
+svg {
+  display: block;
+  /* font-family isn't space-separated, but =~ will have to do */
+  &[font-family~="monospace" i], & [font-family~="monospace" i] {
+    font-family: var(--font-mono);
+  }
+}
+.alignCenter {
+  margin: 1em 0;
+  &.art-text {
+    background-color: var(--highlight-color);
+    border: 1px solid var(--line-color);
+    border-radius: 3px;
+    padding: 0.5em 1em 0;
+    margin-bottom: 0.5em;
+    & pre {
+      padding: 0;
+      width: auto;
+    }
+  }
+  & > *:first-child {
+    border: none;
+    /* this isn't optimal, but it's an existence proof.  PrinceXML doesn't
+       support flexbox yet.
+    */
+    display: table;
+    margin: 0 auto;
+  }
+}
+
+/* lists */
+ol, ul {
+  padding: 0;
+  margin: 0 0 0.5em 2em;
+  & :is(ol, ul) {
+    margin-left: 1em;
+  }
+}
+li {
+  margin: 0 0 0.25em 0;
+}
+ul.empty, .ulEmpty {
+  list-style-type: none;
+  & li {
+    margin-top: 0.5em;
+  }
+}
+:is(ul, ol).compact, .ulCompact, .olCompact {
+  margin: 0 0 0 2em;
+  & li {
+    margin: 0;
+    & :first-child { margin-top: 0; }
+    & :last-child { margin-bottom: 0; }
+  }
+}
+
+/* definition lists */
+dl {
+  clear: left;
+  --indent: 3ch;
+  /* --indent: attr(indent ch); not supported in any browser, but we can dream */
+  &.olPercent {
+    --indent: 5ch;
+    & > dt {
+      min-width: calc(var(--indent) - 2ch);
+      float: none;
+    }
+  }
+
+  dl > dd > & {
+    margin-top: 0.5em;
+    margin-bottom: 0;
+  }
+
+  &:not(.dlNewline) > dt {
+    float: left;
+    margin-right: 2ch;
+    min-width: 8ch;
+  }
+  & > dd {
+    margin-bottom: .8em;
+    margin-left: var(--indent) !important; /* stupid element overrides */
+    min-height: 2ex;
+  }
+}
+:is(dl.compact, .dlCompact) > dd {
+  margin-bottom: 0;
+  & > :is(:first-child, .break:first-child + *) {
+    margin-top: 0;
+  }
+  & > :is(:last-child) {
+    margin-bottom: 0;
+  }
+}
+:is(dd, span).break {
+  display: none;
+}
+
+/* links */
+a {
+  text-decoration: none;
+  &[href] {
+    color: var(--link-color);
+    &:hover { text-decoration: underline; }
+    &.selfRef {
+      color: var(--text-color);
+      &:hover {
+        text-decoration: none;
+        background-color: var(--highlight-color);
+      }
+    }
+  }
+}
+.iref + a[href].internal {
+  color: var(--text-color);
+}
+a.xref:is(.cite, .auto), :is(#status-of-memo, #copyright) a {
+  white-space: nowrap;
+}
+
+/* Figures */
+tt, code, pre {
+  background-color: var(--highlight-color);
+  font: 14px/22px var(--font-mono);
+}
+tt, code {
+  /* changing the font for inline elements leads to different ascender
+     and descender heights; as we want to retain baseline alignment,
+     remove leading to avoid altering the final height of lines
+     note: this fails if these blocks take an entire line,
+     a different solution would be great */
+  line-height: 0;
+}
+:is(h1, h2, h3, h4, h5, h6) :is(tt, code) {
+  font-size: 84%;
+}
+pre {
+  border: 1px solid var(--line-color);
+  font-size: 13.5px;
+  line-height: 16px;
+  letter-spacing: -0.2px;
+  margin: 5px;
+  padding: 5px;
+}
+img {
+  max-width: 100%;
+}
+figure {
+  margin: 0.5em 0;
+  padding: 0;
+  & blockquote {
+    margin: 0.8em 0.4em 0.4em;
+  }
+}
+figcaption, caption {
+  font-style: italic;
+  margin: 0.5em 1.5em;
+  text-align: left;
+  caption-side: bottom;
+}
+@media screen {
+  /* Auto-collapse boilerplate. */
+  :is(#status-of-memo, #copyright) {
+    & p {
+      margin: -2px 0;
+      max-height: 0;
+      transition: max-height 2s ease, margin 0.5s ease 0.5s;
+      overflow: hidden;
+    }
+    &:hover p,
+    & h2:target ~ p {
+      margin: 0.5em 0;
+      max-height: 500px;
+      overflow: auto;
+    }
+  }
+  pre, svg {
+    display: inline-block;
+    /* In the horizontal direction, sometimes people make over-sized figures.
+       Scrollbars for those is therefore necessary: auto adds them as necessary..
+       In the vertical direction, the line-height can combine with the font
+       asender/descender height to produce scrollbars: hidden avoids that. */
+    overflow: auto hidden;
+  }
+  pre {
+    max-width: 100%;
+    width: calc(100% - 22px - 1em);
+  }
+  svg {
+    max-width: calc(100% - 22px - 1em);
+  }
+  figure pre {
+    display: block;
+    width: calc(100% - 25px);
+  }
+  :is(pre, svg) + .pilcrow {
+    display: inline-block;
+    vertical-align: text-bottom;
+    padding-bottom: 8px;
+  }
+}
+
+/* aside, blockquote */
+aside, blockquote {
+  margin-left: 0;
+  padding: 0 2em;
+  font-style: italic;
+}
+blockquote {
+  margin: 1em 0;
+  border-left: 2px var(--pilcrow-strong) solid;
+}
+cite {
+  display: block;
+  text-align: right;
+  font-style: italic;
+}
+
+/* tables */
+table {
+  width: auto;
+  max-width: 100%;
+  margin: 0 0 1em;
+  border-collapse: collapse;
+  &.right { margin-left: auto; }
+  &.center { margin-left: auto; margin-right: auto; }
+  &.left { margin-right: auto; }
+  & .text-left { text-align: left; }
+  & .text-center { text-align: center; }
+  & .text-right { text-align: right; }
+  & caption {
+    margin: 0;
+    padding: 3px 0 3px 1em;
+  }
+  & p { margin: 0; }
+}
+
+thead, tbody {
+  border: 1px solid var(--line-color);
+}
+th, td {
+  text-align: left;
+  vertical-align: top;
+  padding: 5px 10px;
+}
+th {
+  background-color: var(--line-color);
+}
+:is(tr:nth-child(2n), thead+tbody > tr:nth-child(2n+1)) > td {
+  background-color: var(--background-color);
+}
+:is(tr:nth-child(2n+1), thead+tbody > tr:nth-child(2n)) > td {
+  background-color: var(--highlight-color);
+}
+
+/* pilcrow */
+a.pilcrow {
+  margin-left: 3px;
+  opacity: 0.2;
+  user-select: none;
+  &[href] {
+    color: var(--pilcrow-weak);
+    &:hover { text-decoration: none; }
+  }
+  @media not print {
+    :hover > &, &:focus {
+      opacity: 1;
+    }
+    &[href]:hover {
+      color: var(--pilcrow-strong);
+      background-color: transparent;
+    }
+  }
+  @media print {
+    display: none;
+  }
+}
+
+/* misc */
+hr {
+  border: 0;
+  border-top: 1px solid var(--line-color);
+}
+.bcp14 {
+  font-variant: small-caps;
+  font-weight: 600;
+  font-size: var(--small-font-size);
+}
+.role {
+  font-variant: all-small-caps;
+}
+sub, sup {
+  line-height: 1;
+  font-size: 80%;
+}
+
+/* info block */
+#identifiers {
+  margin: 0;
+  font-size: var(--small-font-size);
+  line-height: 18px;
+  --identifier-width: 15ch;
+  & dt {
+    width: var(--identifier-width);
+    min-width: var(--identifier-width);
+    clear: left;
+    float: left;
+    text-align: right;
+    margin-right: 1ch;
+  }
+  & dd {
+    margin: 0;
+    margin-left: calc(1em + var(--identifier-width)) !important;
+    min-width: 5em;
+  }
+  & .authors {
+    & .author {
+      display: inline-block;
+      margin-right: 1.5em;
+    }
+    & .org {
+      font-style: italic;
+    }
+  }
+}
+
+/* The prepared/rendered info at the very bottom of the page */
+.docInfo {
+  color: #999;
+  font-size: 0.9em;
+  font-style: italic;
+  margin-top: 2em;
+  & .prepared {
+    float: right;
+  }
+}
+
+/* table of contents */
+#toc {
+  padding: 0.75em 0 2em 0;
+  margin-bottom: 1em;
+
+  & nav {
+    & ul {
+      margin: 0 0.5em 0 0;
+      padding: 0;
+      list-style: none;
+    }
+    & li {
+      line-height: 1.3em;
+      margin: 2px 0;
+      padding-left: 1.2em;
+      text-indent: -1.2em;
+    }
+  }
+  & a.xref {
+    white-space: normal;
+  }
+}
+
+.references {
+  & > dt {
+    text-align: right;
+    font-weight: bold;
+    min-width: 10ch;
+    margin-right: 1.5ch;
+    &:target::before {
+      content: "⇒";
+      margin: 0 10px 0 -25px;
+    }
+  }
+  & > dd {
+    margin-left: 12ch !important;
+    overflow: visible;
+    & .refInstance {
+      margin-bottom: 0.8em;
+    }
+    & .ascii {
+      margin-bottom: 0.25em;
+    }
+  }
+}
+
+#rfc\.index\.index + ul {
+  margin-left: 0;
+}
+
+/* authors */
+address.vcard {
+  font-style: normal;
+  max-width: 20em;
+  margin: 1em auto 1em 0;
+
+  & .nameRole {
+    font-weight: 700;
+    margin-left: 0;
+  }
+  & .label {
+    margin: 0.5em 0;
+  }
+  & .type {
+    display: none;
+  }
+  & .alternative-contact {
+    margin: 0.5em 0 0.25em 0;
+  }
+  & .non-ascii {
+    margin: 0 0 0 2em;
+  }
+  & div.left {
+    text-align: left;
+  }
+  & div.right {
+    text-align: right;
+  }
+}
+
+hr.addr {
+  border-top: 1px dashed;
+  margin: 0;
+  color: #ddd;
+  max-width: calc(100% - 16px);
+}
+@media (min-width: 500px) {
+  #authors-addresses {
+    & > section {
+      column-count: 2;
+      column-gap: 20px;
+    }
+    & > section > h2 {
+      column-span: all;
+    }
+    /* hack for break-inside: avoid-column */
+    & address {
+      display: inline-block;
+      break-inside: avoid-column;
+    }
+  }
+}
+
+/* Comments */
+.rfcEditorRemove {
+  & p:first-of-type {
+    font-style: italic;
+  }
+}
+.cref {
+  background-color: rgba(249, 232, 105, 0.3);
+  padding: 2px 4px;
+}
+.crefSource {
+  font-style: italic;
+}
+
+@media screen {
+  #toc {
+    & nav {
+      font-family: var(--font-title);
+      font-weight: 360;
+      & > ul { margin-bottom: 2em; }
+      & ul {
+        margin: 0 0 0 4px;
+        & :is(p, li) {
+          margin: 2px 0;
+        }
+      }
+    }
+    & a.toplink {
+      float: right;
+    }
+  }
+}
+@media not screen {
+  #toc a.toplink {
+    display: none;
+  }
+}
+
+
+/* TOC layout for smaller screens */
+@media screen and (max-width: 929px) {
+  #toc {
+    position: fixed;
+    z-index: 2;
+    top: 0;
+    right: 0;
+    padding: 1px 0 0 0;
+    margin: 0;
+    border-bottom: 1px solid #ccc;
+    opacity: 0.6;
+    & h2 {
+      margin: 0;
+      padding: 2px 0 2px 6px;
+      padding-right: 1em;
+      font-size: 18px;
+      line-height: 24px;
+      min-width: 190px;
+      text-align: right;
+      background-color: #444;
+      color: white;
+      cursor: pointer;
+      &::before { /* css hamburger */
+        float: right;
+        position: relative;
+        width: 1em;
+        height: 1px;
+        left: -164px;
+        margin: 8px 0 0 0;
+        background: white none repeat scroll 0 0;
+        box-shadow: 0 4px 0 0 white, 0 8px 0 0 white;
+        content: "";
+      }
+    }
+    & nav {
+      display: none;
+      background-color: var(--background-color);
+      padding: 0.5em 1em 1em;
+      overflow: auto;
+      overscroll-behavior: contain;
+      height: calc(100vh - 48px);
+      border-left: 1px solid #ddd;
+    }
+    &.active {
+      opacity: 1;
+      & nav { display: block; }
+    }
+    /* Make the collapsed ToC header render white on gray also when it's a link */
+    & h2 a,
+    & h2 a:is(:link, :focus, :hover),
+    & a.toplink,
+    & a.toplink:hover {
+      color: white;
+      background-color: #444;
+      text-decoration: none;
+    }
+    & a.toplink {
+      margin: 2px 0.5em 0;
+    }
+  }
+}
+
+/* TOC layout for wide screens */
+@media screen and (min-width: 930px) {
+  body {
+    padding-right: 360px;
+    padding-right: calc(min(180px + 20%, 500px));
+  }
+  #toc {
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    right: calc(50vw - 480px);
+    width: 312px;
+    margin: 0;
+    padding: 0;
+    z-index: 1;
+    & h2 {
+      margin: 0;
+      padding: 0.25em 1em 1em 0;
+    }
+    & nav {
+      display: block;
+      height: calc(90vh - 84px);
+      bottom: 0;
+      padding: 0.5em 0 2em;
+      overflow: auto;
+      overscroll-behavior: contain;
+      scrollbar-width: thin;
+    }
+    & a.toplink {
+      margin: 8px 0.5em 0;
+    }
+  }
+  img { /* future proofing */
+    max-width: 100%;
+    height: auto;
+  }
+}
+
+/* pagination */
+@media print {
+  body {
+    width: 100%;
+  }
+  p {
+    orphans: 3;
+    widows: 3;
+  }
+  #n-copyright-notice {
+    border-bottom: none;
+  }
+  #toc {
+    page-break-before: always;
+    border-top: none;
+    padding-top: 0;
+  }
+  #n-introduction {
+    page-break-before: always;
+  }
+  figure, pre, .vcard {
+    page-break-inside: avoid;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    page-break-after: avoid;
+  }
+  :is(h2, h3, h4, h5, h6)+*, dd {
+    page-break-before: avoid;
+  }
+  pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: 10pt;
+  }
+  table {
+    border: 1px solid #ddd;
+  }
+  td {
+    border-top: 1px solid #ddd;
+  }
+}
+
+@page :first {
+  padding-top: 0;
+  @top-left {
+    content: normal;
+    border: none;
+  }
+  @top-center {
+    content: normal;
+    border: none;
+  }
+  @top-right {
+    content: normal;
+    border: none;
+  }
+}
+
+@page {
+  size: A4;
+  margin-bottom: 45mm;
+  padding-top: 20px;
+}
+
+/* Dark mode. */
+@media (prefers-color-scheme: dark) {
+:root {
+  --background-color: #121212;
+  --text-color: #f0f0f0;
+  --title-color: #fff;
+  --link-color: #4da4f0;
+  --highlight-color: #282828;
+  --line-color: #444;
+  --pilcrow-weak: #444;
+  --pilcrow-strong: #666;
+  scrollbar-color: #777 #333;
+}
+}
+
+/* SVG Trick: a prefix match works because only black and white are allowed */
+svg {
+  & :is([stroke="black"], [stroke^="#000"]) {
+    stroke: var(--text-color);
+  }
+  & :is([stroke="white"], [stroke^="#fff"]) {
+    stroke: var(--background-color);
+  }
+  & :is([fill="black"], [fill^="#000"], :not([fill])) {
+    fill: var(--text-color);
+  }
+  & :is([fill="white"], [fill^="#fff"]) {
+    fill: var(--background-color);
+  }
+}
+</style>
+
+</head>
+<body class="xml2rfc">
+<table class="ears">
+<thead><tr>
+<td class="left">Internet-Draft</td>
+<td class="center">LLM-Stream</td>
+<td class="right">July 2026</td>
+</tr></thead>
+<tfoot><tr>
+<td class="left">Rosomakho &amp; Pallagatti</td>
+<td class="center">Expires 15 January 2027</td>
+<td class="right">[Page]</td>
+</tr></tfoot>
+</table>
+<div id="external-metadata" class="document-information"></div>
+<div id="internal-metadata" class="document-information">
+<dl id="identifiers">
+<dt class="label-workgroup">Workgroup:</dt>
+<dd class="workgroup">Agent Communication Protocol</dd>
+<dt class="label-internet-draft">Internet-Draft:</dt>
+<dd class="internet-draft">draft-spk-agentproto-llm-stream-latest</dd>
+<dt class="label-published">Published:</dt>
+<dd class="published">
+<time datetime="2026-07-14" class="published">14 July 2026</time>
+    </dd>
+<dt class="label-intended-status">Intended Status:</dt>
+<dd class="intended-status">Standards Track</dd>
+<dt class="label-expires">Expires:</dt>
+<dd class="expires"><time datetime="2027-01-15">15 January 2027</time></dd>
+<dt class="label-authors">Authors:</dt>
+<dd class="authors">
+<div class="author">
+      <div class="author-name">Y. Rosomakho</div>
+<div class="org">Zscaler</div>
+</div>
+<div class="author">
+      <div class="author-name">S. Pallagatti</div>
+<div class="org">Zscaler</div>
+</div>
+</dd>
+</dl>
+</div>
+<h1 id="title">A Standard Wire Format for Large Language Model Inference Streaming</h1>
+<section id="section-abstract">
+      <h2 id="abstract"><a href="#abstract" class="selfRef">Abstract</a></h2>
+<p id="section-abstract-1">Large Language Model (LLM) inference endpoints stream response tokens to clients using a fragmented set of vendor-specific application-layer protocols layered on top of standardized transports (HTTP/2, HTTP/1.1, WebSocket, Server-Sent Events). While these transports carry IETF or W3C standardization, the JSON payload schemas, event taxonomies, and framing conventions used within them are entirely vendor-defined, with no RFCs or common specifications governing them.<a href="#section-abstract-1" class="pilcrow">¶</a></p>
+<p id="section-abstract-2">This fragmentation imposes costs across the AI ecosystem. Client developers must build vendor-specific parsing into every SDK. LLM vendors face unnecessary integration friction that raises the barrier to customer adoption. Infrastructure providers (CDNs, load balancers, API gateways) must build vendor-specific handling for caching, routing, and observability. Enterprise customers seeking multi-vendor flexibility are forced to maintain custom translation layers. And observability, compliance, and orchestration tooling must be rebuilt for each provider independently.<a href="#section-abstract-2" class="pilcrow">¶</a></p>
+<p id="section-abstract-3">This document defines a standard wire format for LLM inference streaming over Server-Sent Events (SSE) on HTTP. It specifies a request envelope media type (application/llm-request+json), a response event taxonomy, and a JSON event envelope schema that together enable any participant in the AI ecosystem, including client libraries, LLM vendors, infrastructure providers, orchestration platforms, and observability tools, to handle AI inference traffic using a single, shared protocol contract.<a href="#section-abstract-3" class="pilcrow">¶</a></p>
+<p id="section-abstract-4">The scope of this document is strictly Client/Application to LLM inference endpoint streaming. Agent-to-tool interaction (e.g., MCP) and agent-to-agent communication are out of scope.<a href="#section-abstract-4" class="pilcrow">¶</a></p>
+</section>
+<section class="note rfcEditorRemove" id="section-note.1">
+      <h2 id="name-about-this-document">
+<a href="#name-about-this-document" class="section-name selfRef">About This Document</a>
+      </h2>
+<p id="section-note.1-1">This note is to be removed before publishing as an RFC.<a href="#section-note.1-1" class="pilcrow">¶</a></p>
+<p id="section-note.1-2">
+        The latest revision of this draft can be found at <span><a href="https://santoshpallagatti.github.io/draft-spk-agentproto-llm-stream/draft-spk-agentproto-llm-stream.html">https://santoshpallagatti.github.io/draft-spk-agentproto-llm-stream/draft-spk-agentproto-llm-stream.html</a></span>.
+        Status information for this document may be found at <span><a href="https://datatracker.ietf.org/doc/draft-spk-agentproto-llm-stream/">https://datatracker.ietf.org/doc/draft-spk-agentproto-llm-stream/</a></span>.<a href="#section-note.1-2" class="pilcrow">¶</a></p>
+<p id="section-note.1-3">Source for this draft and an issue tracker can be found at
+        <span><a href="https://github.com/santoshpallagatti/draft-spk-agentproto-llm-stream">https://github.com/santoshpallagatti/draft-spk-agentproto-llm-stream</a></span>.<a href="#section-note.1-3" class="pilcrow">¶</a></p>
+</section>
+<div id="status-of-memo">
+<section id="section-boilerplate.1">
+        <h2 id="name-status-of-this-memo">
+<a href="#name-status-of-this-memo" class="section-name selfRef">Status of This Memo</a>
+        </h2>
+<p id="section-boilerplate.1-1">
+        This Internet-Draft is submitted in full conformance with the
+        provisions of BCP 78 and BCP 79.<a href="#section-boilerplate.1-1" class="pilcrow">¶</a></p>
+<p id="section-boilerplate.1-2">
+        Internet-Drafts are working documents of the Internet Engineering Task
+        Force (IETF). Note that other groups may also distribute working
+        documents as Internet-Drafts. The list of current Internet-Drafts is
+        at <span><a href="https://datatracker.ietf.org/drafts/current/">https://datatracker.ietf.org/drafts/current/</a></span>.<a href="#section-boilerplate.1-2" class="pilcrow">¶</a></p>
+<p id="section-boilerplate.1-3">
+        Internet-Drafts are draft documents valid for a maximum of six months
+        and may be updated, replaced, or obsoleted by other documents at any
+        time. It is inappropriate to use Internet-Drafts as reference
+        material or to cite them other than as "work in progress."<a href="#section-boilerplate.1-3" class="pilcrow">¶</a></p>
+<p id="section-boilerplate.1-4">
+        This Internet-Draft will expire on 15 January 2027.<a href="#section-boilerplate.1-4" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="copyright">
+<section id="section-boilerplate.2">
+        <h2 id="name-copyright-notice">
+<a href="#name-copyright-notice" class="section-name selfRef">Copyright Notice</a>
+        </h2>
+<p id="section-boilerplate.2-1">
+            Copyright (c) 2026 IETF Trust and the persons identified as the
+            document authors. All rights reserved.<a href="#section-boilerplate.2-1" class="pilcrow">¶</a></p>
+<p id="section-boilerplate.2-2">
+            This document is subject to BCP 78 and the IETF Trust's Legal
+            Provisions Relating to IETF Documents
+            (<span><a href="https://trustee.ietf.org/license-info">https://trustee.ietf.org/license-info</a></span>) in effect on the date of
+            publication of this document. Please review these documents
+            carefully, as they describe your rights and restrictions with
+            respect to this document. Code Components extracted from this
+            document must include Revised BSD License text as described in
+            Section 4.e of the Trust Legal Provisions and are provided without
+            warranty as described in the Revised BSD License.<a href="#section-boilerplate.2-2" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="toc">
+<section id="section-toc.1">
+        <a href="#" onclick="scroll(0,0)" class="toplink">▲</a><h2 id="name-table-of-contents">
+<a href="#name-table-of-contents" class="section-name selfRef">Table of Contents</a>
+        </h2>
+<nav class="toc"><ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1">
+            <p id="section-toc.1-1.1.1"><a href="#section-1" class="auto internal xref">1</a>.  <a href="#name-introduction" class="internal xref">Introduction</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1.2.1">
+                <p id="section-toc.1-1.1.2.1.1" class="keepWithNext"><a href="#section-1.1" class="auto internal xref">1.1</a>.  <a href="#name-problem-statement" class="internal xref">Problem Statement</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1.2.2">
+                <p id="section-toc.1-1.1.2.2.1"><a href="#section-1.2" class="auto internal xref">1.2</a>.  <a href="#name-use-cases" class="internal xref">Use Cases</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1.2.2.2.1">
+                    <p id="section-toc.1-1.1.2.2.2.1.1" class="keepWithNext"><a href="#section-1.2.1" class="auto internal xref">1.2.1</a>.  <a href="#name-client-sdk-portability" class="internal xref">Client SDK Portability</a></p>
+</li>
+                  <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1.2.2.2.2">
+                    <p id="section-toc.1-1.1.2.2.2.2.1" class="keepWithNext"><a href="#section-1.2.2" class="auto internal xref">1.2.2</a>.  <a href="#name-llm-vendor-customer-acquisi" class="internal xref">LLM Vendor Customer Acquisition</a></p>
+</li>
+                  <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1.2.2.2.3">
+                    <p id="section-toc.1-1.1.2.2.2.3.1"><a href="#section-1.2.3" class="auto internal xref">1.2.3</a>.  <a href="#name-multi-provider-flexibility" class="internal xref">Multi-Provider Flexibility</a></p>
+</li>
+                  <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1.2.2.2.4">
+                    <p id="section-toc.1-1.1.2.2.2.4.1"><a href="#section-1.2.4" class="auto internal xref">1.2.4</a>.  <a href="#name-observability-and-debugging" class="internal xref">Observability and Debugging</a></p>
+</li>
+                  <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1.2.2.2.5">
+                    <p id="section-toc.1-1.1.2.2.2.5.1"><a href="#section-1.2.5" class="auto internal xref">1.2.5</a>.  <a href="#name-browser-native-ai-consumpti" class="internal xref">Browser-Native AI Consumption</a></p>
+</li>
+                  <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1.2.2.2.6">
+                    <p id="section-toc.1-1.1.2.2.2.6.1"><a href="#section-1.2.6" class="auto internal xref">1.2.6</a>.  <a href="#name-regulatory-and-compliance-a" class="internal xref">Regulatory and Compliance Auditing</a></p>
+</li>
+                  <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1.2.2.2.7">
+                    <p id="section-toc.1-1.1.2.2.2.7.1"><a href="#section-1.2.7" class="auto internal xref">1.2.7</a>.  <a href="#name-multi-vendor-orchestration-" class="internal xref">Multi-Vendor Orchestration Platforms</a></p>
+</li>
+                  <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1.2.2.2.8">
+                    <p id="section-toc.1-1.1.2.2.2.8.1"><a href="#section-1.2.8" class="auto internal xref">1.2.8</a>.  <a href="#name-http-intermediaries" class="internal xref">HTTP Intermediaries</a></p>
+</li>
+                </ul>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1.2.3">
+                <p id="section-toc.1-1.1.2.3.1"><a href="#section-1.3" class="auto internal xref">1.3</a>.  <a href="#name-scope" class="internal xref">Scope</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1.2.4">
+                <p id="section-toc.1-1.1.2.4.1"><a href="#section-1.4" class="auto internal xref">1.4</a>.  <a href="#name-design-rationale" class="internal xref">Design Rationale</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.2">
+            <p id="section-toc.1-1.2.1"><a href="#section-2" class="auto internal xref">2</a>.  <a href="#name-conventions-and-definitions" class="internal xref">Conventions and Definitions</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.3">
+            <p id="section-toc.1-1.3.1"><a href="#section-3" class="auto internal xref">3</a>.  <a href="#name-transport-binding" class="internal xref">Transport Binding</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4">
+            <p id="section-toc.1-1.4.1"><a href="#section-4" class="auto internal xref">4</a>.  <a href="#name-media-types-and-request-for" class="internal xref">Media Types and Request Format</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4.2.1">
+                <p id="section-toc.1-1.4.2.1.1"><a href="#section-4.1" class="auto internal xref">4.1</a>.  <a href="#name-request-media-type" class="internal xref">Request Media Type</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4.2.2">
+                <p id="section-toc.1-1.4.2.2.1"><a href="#section-4.2" class="auto internal xref">4.2</a>.  <a href="#name-request-envelope" class="internal xref">Request Envelope</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4.2.3">
+                <p id="section-toc.1-1.4.2.3.1"><a href="#section-4.3" class="auto internal xref">4.3</a>.  <a href="#name-messages-conversation-histo" class="internal xref">Messages (Conversation History)</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4.2.3.2.1">
+                    <p id="section-toc.1-1.4.2.3.2.1.1"><a href="#section-4.3.1" class="auto internal xref">4.3.1</a>.  <a href="#name-the-content-field" class="internal xref">The Content Field</a></p>
+</li>
+                </ul>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4.2.4">
+                <p id="section-toc.1-1.4.2.4.1"><a href="#section-4.4" class="auto internal xref">4.4</a>.  <a href="#name-tools-function-declarations" class="internal xref">Tools (Function Declarations)</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4.2.5">
+                <p id="section-toc.1-1.4.2.5.1"><a href="#section-4.5" class="auto internal xref">4.5</a>.  <a href="#name-generation-parameters" class="internal xref">Generation Parameters</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4.2.6">
+                <p id="section-toc.1-1.4.2.6.1"><a href="#section-4.6" class="auto internal xref">4.6</a>.  <a href="#name-request-metadata" class="internal xref">Request Metadata</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4.2.7">
+                <p id="section-toc.1-1.4.2.7.1"><a href="#section-4.7" class="auto internal xref">4.7</a>.  <a href="#name-vendor-extensions" class="internal xref">Vendor Extensions</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4.2.8">
+                <p id="section-toc.1-1.4.2.8.1"><a href="#section-4.8" class="auto internal xref">4.8</a>.  <a href="#name-tool-interaction-model" class="internal xref">Tool Interaction Model</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4.2.9">
+                <p id="section-toc.1-1.4.2.9.1"><a href="#section-4.9" class="auto internal xref">4.9</a>.  <a href="#name-response-media-type" class="internal xref">Response Media Type</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5">
+            <p id="section-toc.1-1.5.1"><a href="#section-5" class="auto internal xref">5</a>.  <a href="#name-response-streaming-format" class="internal xref">Response Streaming Format</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5.2.1">
+                <p id="section-toc.1-1.5.2.1.1"><a href="#section-5.1" class="auto internal xref">5.1</a>.  <a href="#name-sse-event-framing" class="internal xref">SSE Event Framing</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5.2.2">
+                <p id="section-toc.1-1.5.2.2.1"><a href="#section-5.2" class="auto internal xref">5.2</a>.  <a href="#name-event-envelope" class="internal xref">Event Envelope</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5.2.2.2.1">
+                    <p id="section-toc.1-1.5.2.2.2.1.1"><a href="#section-5.2.1" class="auto internal xref">5.2.1</a>.  <a href="#name-sequence-numbers" class="internal xref">Sequence Numbers</a></p>
+</li>
+                </ul>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5.2.3">
+                <p id="section-toc.1-1.5.2.3.1"><a href="#section-5.3" class="auto internal xref">5.3</a>.  <a href="#name-event-types" class="internal xref">Event Types</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5.2.3.2.1">
+                    <p id="section-toc.1-1.5.2.3.2.1.1"><a href="#section-5.3.1" class="auto internal xref">5.3.1</a>.  <a href="#name-streamstart" class="internal xref">stream.start</a></p>
+</li>
+                  <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5.2.3.2.2">
+                    <p id="section-toc.1-1.5.2.3.2.2.1"><a href="#section-5.3.2" class="auto internal xref">5.3.2</a>.  <a href="#name-contentdelta" class="internal xref">content.delta</a></p>
+</li>
+                  <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5.2.3.2.3">
+                    <p id="section-toc.1-1.5.2.3.2.3.1"><a href="#section-5.3.3" class="auto internal xref">5.3.3</a>.  <a href="#name-contentstop" class="internal xref">content.stop</a></p>
+</li>
+                  <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5.2.3.2.4">
+                    <p id="section-toc.1-1.5.2.3.2.4.1"><a href="#section-5.3.4" class="auto internal xref">5.3.4</a>.  <a href="#name-toolcall" class="internal xref">tool.call</a></p>
+</li>
+                  <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5.2.3.2.5">
+                    <p id="section-toc.1-1.5.2.3.2.5.1"><a href="#section-5.3.5" class="auto internal xref">5.3.5</a>.  <a href="#name-usage" class="internal xref">usage</a></p>
+</li>
+                  <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5.2.3.2.6">
+                    <p id="section-toc.1-1.5.2.3.2.6.1"><a href="#section-5.3.6" class="auto internal xref">5.3.6</a>.  <a href="#name-error" class="internal xref">error</a></p>
+</li>
+                  <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5.2.3.2.7">
+                    <p id="section-toc.1-1.5.2.3.2.7.1"><a href="#section-5.3.7" class="auto internal xref">5.3.7</a>.  <a href="#name-streamend" class="internal xref">stream.end</a></p>
+</li>
+                </ul>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5.2.4">
+                <p id="section-toc.1-1.5.2.4.1"><a href="#section-5.4" class="auto internal xref">5.4</a>.  <a href="#name-stream-lifecycle" class="internal xref">Stream Lifecycle</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5.2.5">
+                <p id="section-toc.1-1.5.2.5.1"><a href="#section-5.5" class="auto internal xref">5.5</a>.  <a href="#name-complete-example" class="internal xref">Complete Example</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.6">
+            <p id="section-toc.1-1.6.1"><a href="#section-6" class="auto internal xref">6</a>.  <a href="#name-framing-design-trade-off" class="internal xref">Framing Design Trade-off</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.6.2.1">
+                <p id="section-toc.1-1.6.2.1.1"><a href="#section-6.1" class="auto internal xref">6.1</a>.  <a href="#name-sse-text-based-framing-this" class="internal xref">SSE Text-Based Framing (This Specification)</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.6.2.2">
+                <p id="section-toc.1-1.6.2.2.1"><a href="#section-6.2" class="auto internal xref">6.2</a>.  <a href="#name-length-prefixed-binary-fram" class="internal xref">Length-Prefixed Binary Framing (Alternative)</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.6.2.3">
+                <p id="section-toc.1-1.6.2.3.1"><a href="#section-6.3" class="auto internal xref">6.3</a>.  <a href="#name-rationale-for-sse" class="internal xref">Rationale for SSE</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.7">
+            <p id="section-toc.1-1.7.1"><a href="#section-7" class="auto internal xref">7</a>.  <a href="#name-backward-compatibility" class="internal xref">Backward Compatibility</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.7.2.1">
+                <p id="section-toc.1-1.7.2.1.1"><a href="#section-7.1" class="auto internal xref">7.1</a>.  <a href="#name-api-gateway-translation" class="internal xref">API Gateway Translation</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.7.2.2">
+                <p id="section-toc.1-1.7.2.2.1"><a href="#section-7.2" class="auto internal xref">7.2</a>.  <a href="#name-content-type-negotiation" class="internal xref">Content-Type Negotiation</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.7.2.3">
+                <p id="section-toc.1-1.7.2.3.1"><a href="#section-7.3" class="auto internal xref">7.3</a>.  <a href="#name-dual-format-endpoints" class="internal xref">Dual-Format Endpoints</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.8">
+            <p id="section-toc.1-1.8.1"><a href="#section-8" class="auto internal xref">8</a>.  <a href="#name-security-considerations" class="internal xref">Security Considerations</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.8.2.1">
+                <p id="section-toc.1-1.8.2.1.1"><a href="#section-8.1" class="auto internal xref">8.1</a>.  <a href="#name-prompt-confidentiality" class="internal xref">Prompt Confidentiality</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.8.2.2">
+                <p id="section-toc.1-1.8.2.2.1"><a href="#section-8.2" class="auto internal xref">8.2</a>.  <a href="#name-tool-call-abuse" class="internal xref">Tool-Call Abuse</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.8.2.3">
+                <p id="section-toc.1-1.8.2.3.1"><a href="#section-8.3" class="auto internal xref">8.3</a>.  <a href="#name-extension-field-safety" class="internal xref">Extension Field Safety</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.8.2.4">
+                <p id="section-toc.1-1.8.2.4.1"><a href="#section-8.4" class="auto internal xref">8.4</a>.  <a href="#name-sequence-exhaustion" class="internal xref">Sequence Exhaustion</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.9">
+            <p id="section-toc.1-1.9.1"><a href="#section-9" class="auto internal xref">9</a>.  <a href="#name-iana-considerations" class="internal xref">IANA Considerations</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.9.2.1">
+                <p id="section-toc.1-1.9.2.1.1"><a href="#section-9.1" class="auto internal xref">9.1</a>.  <a href="#name-media-type-registration-app" class="internal xref">Media Type Registration: application/llm-request+json</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.9.2.2">
+                <p id="section-toc.1-1.9.2.2.1"><a href="#section-9.2" class="auto internal xref">9.2</a>.  <a href="#name-sse-event-type-registry" class="internal xref">SSE Event Type Registry</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.10">
+            <p id="section-toc.1-1.10.1"><a href="#section-10" class="auto internal xref">10</a>. <a href="#name-references" class="internal xref">References</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.10.2.1">
+                <p id="section-toc.1-1.10.2.1.1"><a href="#section-10.1" class="auto internal xref">10.1</a>.  <a href="#name-normative-references" class="internal xref">Normative References</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.10.2.2">
+                <p id="section-toc.1-1.10.2.2.1"><a href="#section-10.2" class="auto internal xref">10.2</a>.  <a href="#name-informative-references" class="internal xref">Informative References</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.11">
+            <p id="section-toc.1-1.11.1"><a href="#appendix-A" class="auto internal xref">Appendix A</a>.  <a href="#name-json-schema-for-event-envel" class="internal xref">JSON Schema for Event Envelope</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.12">
+            <p id="section-toc.1-1.12.1"><a href="#appendix-B" class="auto internal xref">Appendix B</a>.  <a href="#name-observed-protocol-landscape" class="internal xref">Observed Protocol Landscape (June 2026)</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.13">
+            <p id="section-toc.1-1.13.1"><a href="#appendix-C" class="auto internal xref"></a><a href="#name-acknowledgments" class="internal xref">Acknowledgments</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.14">
+            <p id="section-toc.1-1.14.1"><a href="#appendix-D" class="auto internal xref"></a><a href="#name-authors-addresses" class="internal xref">Authors' Addresses</a></p>
+</li>
+        </ul>
+</nav>
+</section>
+</div>
+<div id="introduction">
+<section id="section-1">
+      <h2 id="name-introduction">
+<a href="#section-1" class="section-number selfRef">1. </a><a href="#name-introduction" class="section-name selfRef">Introduction</a>
+      </h2>
+<div id="problem-statement">
+<section id="section-1.1">
+        <h3 id="name-problem-statement">
+<a href="#section-1.1" class="section-number selfRef">1.1. </a><a href="#name-problem-statement" class="section-name selfRef">Problem Statement</a>
+        </h3>
+<p id="section-1.1-1">The AI inference ecosystem is experiencing protocol fragmentation reminiscent of the early web. Every major vendor has independently defined its own wire format for the same fundamental operation: streaming generated tokens from a model to a client. Each vendor uses a different combination of application-layer framing and JSON payload schema:<a href="#section-1.1-1" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-1.1-2.1">
+            <p id="section-1.1-2.1.1">OpenAI streams SSE with JSON payloads using the path <code>choices[0].delta.content</code> for generated text.<a href="#section-1.1-2.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-1.1-2.2">
+            <p id="section-1.1-2.2.1">Anthropic streams SSE with typed event blocks, placing generated text at delta.text inside content_block_delta events.<a href="#section-1.1-2.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-1.1-2.3">
+            <p id="section-1.1-2.3.1">Google Gemini streams SSE with JSON payloads using <code>candidates[0].content.parts[0].text</code>.<a href="#section-1.1-2.3.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-1.1-2.4">
+            <p id="section-1.1-2.4.1">Microsoft Azure / Copilot uses WebSocket with the SignalR Hub Protocol's <span>[<a href="#SignalR" class="cite xref">SignalR</a>]</span> proprietary 0x1E record-separator framing.<a href="#section-1.1-2.4.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-1.1-2.5">
+            <p id="section-1.1-2.5.1">Cursor and Windsurf (AI coding assistants) use the Connect protocol <span>[<a href="#Connect" class="cite xref">Connect</a>]</span> (application/connect+proto) with a 5-byte binary envelope and Protobuf-encoded payloads over HTTP/2.<a href="#section-1.1-2.5.1" class="pilcrow">¶</a></p>
+</li>
+        </ul>
+<p id="section-1.1-3">The underlying transports, specifically HTTP/2 <span>[<a href="#RFC9113" class="cite xref">RFC9113</a>]</span>, HTTP/1.1 <span>[<a href="#RFC9110" class="cite xref">RFC9110</a>]</span>, WebSocket <span>[<a href="#RFC6455" class="cite xref">RFC6455</a>]</span>, and SSE <span>[<a href="#WHATWG-HTML" class="cite xref">WHATWG-HTML</a>]</span>, are all properly standardized. The problem exists entirely at the application layer: the JSON schemas, event types, stream lifecycle conventions, and payload structures that ride on top of these transports.<a href="#section-1.1-3" class="pilcrow">¶</a></p>
+<p id="section-1.1-4">Additionally, even where vendors use the same sub-protocol, behavior diverges in practice. For example, Cursor keeps HTTP/2 streams open indefinitely without sending END_STREAM, while Windsurf sends END_STREAM on the same Connect+proto protocol: same framing, different stream lifecycle.<a href="#section-1.1-4" class="pilcrow">¶</a></p>
+<p id="section-1.1-5">SSE is used correctly per the W3C specification by most vendors, but nothing in the SSE specification constrains what goes inside the event: and data: fields. Event type names, JSON field names, nesting structures, and payload schemas are entirely up to each provider.<a href="#section-1.1-5" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="use-cases">
+<section id="section-1.2">
+        <h3 id="name-use-cases">
+<a href="#section-1.2" class="section-number selfRef">1.2. </a><a href="#name-use-cases" class="section-name selfRef">Use Cases</a>
+        </h3>
+<p id="section-1.2-1">The absence of a standard wire format for AI inference streaming creates unnecessary cost and complexity across the AI ecosystem. The following use cases illustrate the breadth of the problem:<a href="#section-1.2-1" class="pilcrow">¶</a></p>
+<div id="client-sdk-portability">
+<section id="section-1.2.1">
+          <h4 id="name-client-sdk-portability">
+<a href="#section-1.2.1" class="section-number selfRef">1.2.1. </a><a href="#name-client-sdk-portability" class="section-name selfRef">Client SDK Portability</a>
+          </h4>
+<p id="section-1.2.1-1">Today every LLM provider requires its own client library (openai-python, anthropic-sdk, google-genai), each with proprietary streaming response parsing. A standard format enables a single open-source client library that works with any conforming provider. Developers integrate once and switch providers by changing a URL.<a href="#section-1.2.1-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="llm-vendor-customer-acquisition">
+<section id="section-1.2.2">
+          <h4 id="name-llm-vendor-customer-acquisi">
+<a href="#section-1.2.2" class="section-number selfRef">1.2.2. </a><a href="#name-llm-vendor-customer-acquisi" class="section-name selfRef">LLM Vendor Customer Acquisition</a>
+          </h4>
+<p id="section-1.2.2-1">Vendor-specific wire formats force every client application to depend on a provider-specific SDK with proprietary streaming response parsing. Switching providers requires swapping SDK dependencies and updating response handling code throughout the application, creating soft lock-in that raises the cost of evaluating alternatives. Abstraction platforms such as LiteLLM, Portkey, and AWS Bedrock exist specifically to bridge this gap, each maintaining vendor-specific translation internally. A standard format would make provider-switching as simple as changing an endpoint URL, with no SDK or code changes required. Vendors compete on model quality, not integration friction.<a href="#section-1.2.2-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="multi-provider-flexibility">
+<section id="section-1.2.3">
+          <h4 id="name-multi-provider-flexibility">
+<a href="#section-1.2.3" class="section-number selfRef">1.2.3. </a><a href="#name-multi-provider-flexibility" class="section-name selfRef">Multi-Provider Flexibility</a>
+          </h4>
+<p id="section-1.2.3-1">Enterprises increasingly route different workloads to different providers: one vendor for coding tasks, another for summarization, a third for cost-sensitive workloads. Today this requires maintaining separate client integrations and translation layers (LiteLLM, Portkey, AWS Bedrock, Azure AI Gateway). A standard format makes multi-provider usage as simple as changing the endpoint URL.<a href="#section-1.2.3-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="observability-and-debugging">
+<section id="section-1.2.4">
+          <h4 id="name-observability-and-debugging">
+<a href="#section-1.2.4" class="section-number selfRef">1.2.4. </a><a href="#name-observability-and-debugging" class="section-name selfRef">Observability and Debugging</a>
+          </h4>
+<p id="section-1.2.4-1">Standard event types (stream.start, content.delta, stream.end) and sequence numbers enable consistent monitoring, latency measurement, error tracking, and SLA reporting across providers, without building custom instrumentation per vendor. Both client-side and server-side teams benefit from a shared vocabulary for AI inference lifecycle events.<a href="#section-1.2.4-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="browser-native-ai-consumption">
+<section id="section-1.2.5">
+          <h4 id="name-browser-native-ai-consumpti">
+<a href="#section-1.2.5" class="section-number selfRef">1.2.5. </a><a href="#name-browser-native-ai-consumpti" class="section-name selfRef">Browser-Native AI Consumption</a>
+          </h4>
+<p id="section-1.2.5-1">As AI consumption moves into browsers, a standard SSE schema means the EventSource API has a predictable contract to build on. Today, every browser-based AI client reinvents streaming response parsing in JavaScript. A standard event taxonomy and JSON envelope would enable native browser support for AI inference streaming.<a href="#section-1.2.5-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="regulatory-and-compliance-auditing">
+<section id="section-1.2.6">
+          <h4 id="name-regulatory-and-compliance-a">
+<a href="#section-1.2.6" class="section-number selfRef">1.2.6. </a><a href="#name-regulatory-and-compliance-a" class="section-name selfRef">Regulatory and Compliance Auditing</a>
+          </h4>
+<p id="section-1.2.6-1">AI regulation (e.g., the EU AI Act) increasingly requires enterprises to audit AI usage: what was prompted, what was generated, which model was used, how many tokens were consumed. A standard request and response envelope makes it possible to build compliance tooling that works across all providers without vendor-specific extraction logic.<a href="#section-1.2.6-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="multi-vendor-orchestration-platforms">
+<section id="section-1.2.7">
+          <h4 id="name-multi-vendor-orchestration-">
+<a href="#section-1.2.7" class="section-number selfRef">1.2.7. </a><a href="#name-multi-vendor-orchestration-" class="section-name selfRef">Multi-Vendor Orchestration Platforms</a>
+          </h4>
+<p id="section-1.2.7-1">Services such as LiteLLM, Portkey, AWS Bedrock, and Azure AI Gateway exist specifically to provide a unified interface across LLM providers. Today each maintains vendor-specific translation layers for every supported provider. A standard format eliminates this translation entirely: one input format, one output format, any provider.<a href="#section-1.2.7-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="http-intermediaries">
+<section id="section-1.2.8">
+          <h4 id="name-http-intermediaries">
+<a href="#section-1.2.8" class="section-number selfRef">1.2.8. </a><a href="#name-http-intermediaries" class="section-name selfRef">HTTP Intermediaries</a>
+          </h4>
+<p id="section-1.2.8-1">Forward proxies, reverse proxies, and security appliances that process AI inference traffic need to extract generated text and tool invocations from streaming responses for content inspection, policy enforcement, and audit logging. Today, the generated text lives at a different JSON path per vendor, requiring a separate parser for each provider. A standard format reduces this to a single parser with one canonical field to inspect.<a href="#section-1.2.8-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+</section>
+</div>
+<div id="scope">
+<section id="section-1.3">
+        <h3 id="name-scope">
+<a href="#section-1.3" class="section-number selfRef">1.3. </a><a href="#name-scope" class="section-name selfRef">Scope</a>
+        </h3>
+<p id="section-1.3-1">This document addresses Client/Application to LLM inference endpoint streaming, specifically the path from an end-user application (web browser, IDE, mobile app, API client) to an LLM inference endpoint and back.<a href="#section-1.3-1" class="pilcrow">¶</a></p>
+<p id="section-1.3-2">The following are explicitly out of scope:<a href="#section-1.3-2" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-1.3-3.1">
+            <p id="section-1.3-3.1.1">Agent-to-tool interaction (e.g., Model Context Protocol <span>[<a href="#MCP" class="cite xref">MCP</a>]</span>)<a href="#section-1.3-3.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-1.3-3.2">
+            <p id="section-1.3-3.2.1">Agent-to-agent communication<a href="#section-1.3-3.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-1.3-3.3">
+            <p id="section-1.3-3.3.1">Model training traffic<a href="#section-1.3-3.3.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-1.3-3.4">
+            <p id="section-1.3-3.4.1">Embedding and batch inference APIs (non-streaming)<a href="#section-1.3-3.4.1" class="pilcrow">¶</a></p>
+</li>
+        </ul>
+</section>
+</div>
+<div id="design-rationale">
+<section id="section-1.4">
+        <h3 id="name-design-rationale">
+<a href="#section-1.4" class="section-number selfRef">1.4. </a><a href="#name-design-rationale" class="section-name selfRef">Design Rationale</a>
+        </h3>
+<p id="section-1.4-1">The standard is designed around three principles:<a href="#section-1.4-1" class="pilcrow">¶</a></p>
+<ol start="1" type="1" class="normal type-1" id="section-1.4-2">
+<li id="section-1.4-2.1">
+            <p id="section-1.4-2.1.1">Keep SSE as the transport. SSE over HTTP is already the dominant transport for AI inference streaming, used by OpenAI, Anthropic, Google, Cohere, and Mistral. It works on both HTTP/2 and HTTP/1.1, has broad ecosystem support, and requires no new transport protocol. A WebTransport <span>[<a href="#W3C-WEBTRANSPORT" class="cite xref">W3C-WEBTRANSPORT</a>]</span> binding <span class="bcp14">MAY</span> be defined in a future document as adoption matures.<a href="#section-1.4-2.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li id="section-1.4-2.2">
+            <p id="section-1.4-2.2.1">Standardize only the payload. The transport layer is already standardized. This document defines only what goes inside the SSE event: and data: fields, specifically the event type taxonomy and JSON envelope schema.<a href="#section-1.4-2.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li id="section-1.4-2.3">
+            <p id="section-1.4-2.3.1">Preserve vendor extensibility. Vendors retain full freedom to include proprietary metadata via namespaced extension fields. Conforming parsers <span class="bcp14">MUST</span> ignore unknown fields.<a href="#section-1.4-2.3.1" class="pilcrow">¶</a></p>
+</li>
+        </ol>
+</section>
+</div>
+</section>
+</div>
+<div id="conventions-and-definitions">
+<section id="section-2">
+      <h2 id="name-conventions-and-definitions">
+<a href="#section-2" class="section-number selfRef">2. </a><a href="#name-conventions-and-definitions" class="section-name selfRef">Conventions and Definitions</a>
+      </h2>
+<p id="section-2-1">The key words "<span class="bcp14">MUST</span>", "<span class="bcp14">MUST NOT</span>", "<span class="bcp14">REQUIRED</span>", "<span class="bcp14">SHALL</span>", "<span class="bcp14">SHALL NOT</span>", "<span class="bcp14">SHOULD</span>", "<span class="bcp14">SHOULD NOT</span>", "<span class="bcp14">RECOMMENDED</span>", "<span class="bcp14">NOT RECOMMENDED</span>",
+"<span class="bcp14">MAY</span>", and "<span class="bcp14">OPTIONAL</span>" in this document are to be interpreted as
+described in BCP 14 <span>[<a href="#RFC2119" class="cite xref">RFC2119</a>]</span> <span>[<a href="#RFC8174" class="cite xref">RFC8174</a>]</span> when, and only when, they
+appear in all capitals, as shown here.<a href="#section-2-1" class="pilcrow">¶</a></p>
+<span class="break"></span><dl class="dlParallel" id="section-2-2">
+        <dt id="section-2-2.1">Inference endpoint:</dt>
+        <dd style="margin-left: 1.5em" id="section-2-2.2">
+          <p id="section-2-2.2.1">An HTTP endpoint that accepts a prompt and returns a generated completion, typically streamed token-by-token.<a href="#section-2-2.2.1" class="pilcrow">¶</a></p>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-2-2.3">Implementation:</dt>
+        <dd style="margin-left: 1.5em" id="section-2-2.4">
+          <p id="section-2-2.4.1">Any software component that produces or consumes LLM inference streams conforming to this specification, including client libraries, server endpoints, API gateways, and orchestration platforms.<a href="#section-2-2.4.1" class="pilcrow">¶</a></p>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-2-2.5">Stream:</dt>
+        <dd style="margin-left: 1.5em" id="section-2-2.6">
+          <p id="section-2-2.6.1">A single request-response exchange in which the response is delivered incrementally via SSE events.<a href="#section-2-2.6.1" class="pilcrow">¶</a></p>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-2-2.7">Event envelope:</dt>
+        <dd style="margin-left: 1.5em" id="section-2-2.8">
+          <p id="section-2-2.8.1">The JSON object carried in each SSE data: field, conforming to the schema defined in <a href="#event-envelope" class="auto internal xref">Section 5.2</a>.<a href="#section-2-2.8.1" class="pilcrow">¶</a></p>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-2-2.9">Content delta:</dt>
+        <dd style="margin-left: 1.5em" id="section-2-2.10">
+          <p id="section-2-2.10.1">An incremental fragment of generated text delivered in a single event.<a href="#section-2-2.10.1" class="pilcrow">¶</a></p>
+</dd>
+      <dd class="break"></dd>
+</dl>
+</section>
+</div>
+<div id="transport-binding">
+<section id="section-3">
+      <h2 id="name-transport-binding">
+<a href="#section-3" class="section-number selfRef">3. </a><a href="#name-transport-binding" class="section-name selfRef">Transport Binding</a>
+      </h2>
+<p id="section-3-1">A conforming inference endpoint:<a href="#section-3-1" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-3-2.1">
+          <p id="section-3-2.1.1"><span class="bcp14">MUST</span> accept requests via HTTP POST.<a href="#section-3-2.1.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="section-3-2.2">
+          <p id="section-3-2.2.1"><span class="bcp14">MUST</span> deliver streaming responses using Server-Sent Events (SSE) as defined in the WHATWG HTML Living Standard <span>[<a href="#WHATWG-HTML" class="cite xref">WHATWG-HTML</a>]</span>, Section "Server-sent events."<a href="#section-3-2.2.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="section-3-2.3">
+          <p id="section-3-2.3.1"><span class="bcp14">MUST</span> use HTTP/2 <span>[<a href="#RFC9113" class="cite xref">RFC9113</a>]</span> or HTTP/1.1 <span>[<a href="#RFC9110" class="cite xref">RFC9110</a>]</span> as the underlying HTTP version.<a href="#section-3-2.3.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="section-3-2.4">
+          <p id="section-3-2.4.1"><span class="bcp14">SHOULD</span> prefer HTTP/2 for its multiplexing and flow-control benefits.<a href="#section-3-2.4.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="section-3-2.5">
+          <p id="section-3-2.5.1"><span class="bcp14">MUST</span> use TLS 1.3 <span>[<a href="#RFC8446" class="cite xref">RFC8446</a>]</span> or later for production deployments.<a href="#section-3-2.5.1" class="pilcrow">¶</a></p>
+</li>
+      </ul>
+<p id="section-3-3">SSE over HTTP was chosen because it is already the dominant transport for AI inference streaming. It works on both HTTP/2 (multiplexed) and HTTP/1.1 (one stream per connection), providing graceful degradation in environments that support only HTTP/1.1. In contrast, gRPC <span>[<a href="#gRPC" class="cite xref">gRPC</a>]</span> and Connect+proto mandate HTTP/2 and break in HTTP/1-only environments.<a href="#section-3-3" class="pilcrow">¶</a></p>
+<p id="section-3-4">AI inference streams are characteristically long-lived and open-ended; the server does not set Content-Length and typically does not send HTTP/2 END_STREAM until generation is complete. This behavior differs from traditional HTTP request-response patterns and may affect timeout and buffering configurations in both clients and infrastructure. The same pattern is expected on HTTP/3 (QUIC).<a href="#section-3-4" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="media-types-and-request-format">
+<section id="section-4">
+      <h2 id="name-media-types-and-request-for">
+<a href="#section-4" class="section-number selfRef">4. </a><a href="#name-media-types-and-request-for" class="section-name selfRef">Media Types and Request Format</a>
+      </h2>
+<div id="request-media-type">
+<section id="section-4.1">
+        <h3 id="name-request-media-type">
+<a href="#section-4.1" class="section-number selfRef">4.1. </a><a href="#name-request-media-type" class="section-name selfRef">Request Media Type</a>
+        </h3>
+<p id="section-4.1-1">This document registers the media type application/llm-request+json.<a href="#section-4.1-1" class="pilcrow">¶</a></p>
+<p id="section-4.1-2">Sent by the client in the HTTP POST body, this Content-Type indicates that the request payload conforms to the request envelope defined in <a href="#request-envelope" class="auto internal xref">Section 4.2</a>. Any component that observes this Content-Type can immediately identify the traffic as LLM inference, enabling automated routing, logging, and processing without hostname-based heuristics.<a href="#section-4.1-2" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="request-envelope">
+<section id="section-4.2">
+        <h3 id="name-request-envelope">
+<a href="#section-4.2" class="section-number selfRef">4.2. </a><a href="#name-request-envelope" class="section-name selfRef">Request Envelope</a>
+        </h3>
+<p id="section-4.2-1">The request body is a JSON object. Its top-level fields are organized into five logical groups: protocol control, conversation history, tool declarations, generation parameters, and extensibility.<a href="#section-4.2-1" class="pilcrow">¶</a></p>
+<table class="center" id="table-1">
+          <caption><a href="#table-1" class="selfRef">Table 1</a></caption>
+<thead>
+            <tr>
+              <th class="text-left" rowspan="1" colspan="1">Field</th>
+              <th class="text-left" rowspan="1" colspan="1">Type</th>
+              <th class="text-left" rowspan="1" colspan="1">Required</th>
+              <th class="text-left" rowspan="1" colspan="1">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">version</td>
+              <td class="text-left" rowspan="1" colspan="1">string</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">REQUIRED</span>
+</td>
+              <td class="text-left" rowspan="1" colspan="1">Protocol version. <span class="bcp14">MUST</span> be "1.0".</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">stream</td>
+              <td class="text-left" rowspan="1" colspan="1">boolean</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">REQUIRED</span>
+</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">MUST</span> be true for streaming.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">model</td>
+              <td class="text-left" rowspan="1" colspan="1">string</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">REQUIRED</span>
+</td>
+              <td class="text-left" rowspan="1" colspan="1">Model identifier. Opaque string.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">messages</td>
+              <td class="text-left" rowspan="1" colspan="1">array</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">REQUIRED</span>
+</td>
+              <td class="text-left" rowspan="1" colspan="1">Conversation history. See <a href="#messages" class="auto internal xref">Section 4.3</a>.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">tools</td>
+              <td class="text-left" rowspan="1" colspan="1">array</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">OPTIONAL</span>
+</td>
+              <td class="text-left" rowspan="1" colspan="1">Tool/function definitions. See <a href="#tools" class="auto internal xref">Section 4.4</a>.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">parameters</td>
+              <td class="text-left" rowspan="1" colspan="1">object</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">OPTIONAL</span>
+</td>
+              <td class="text-left" rowspan="1" colspan="1">Generation parameters. See <a href="#gen-parameters" class="auto internal xref">Section 4.5</a>.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">metadata</td>
+              <td class="text-left" rowspan="1" colspan="1">object</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">OPTIONAL</span>
+</td>
+              <td class="text-left" rowspan="1" colspan="1">Request metadata. See <a href="#metadata-field" class="auto internal xref">Section 4.6</a>.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">extensions</td>
+              <td class="text-left" rowspan="1" colspan="1">object</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">OPTIONAL</span>
+</td>
+              <td class="text-left" rowspan="1" colspan="1">Vendor extensions. See <a href="#extensions-field" class="auto internal xref">Section 4.7</a>.</td>
+            </tr>
+          </tbody>
+        </table>
+</section>
+</div>
+<div id="messages">
+<section id="section-4.3">
+        <h3 id="name-messages-conversation-histo">
+<a href="#section-4.3" class="section-number selfRef">4.3. </a><a href="#name-messages-conversation-histo" class="section-name selfRef">Messages (Conversation History)</a>
+        </h3>
+<p id="section-4.3-1">The messages field is an ordered array of message objects representing the conversation history. The model reads this full history to understand context before generating a response.<a href="#section-4.3-1" class="pilcrow">¶</a></p>
+<table class="center" id="table-2">
+          <caption><a href="#table-2" class="selfRef">Table 2</a></caption>
+<thead>
+            <tr>
+              <th class="text-left" rowspan="1" colspan="1">Field</th>
+              <th class="text-left" rowspan="1" colspan="1">Type</th>
+              <th class="text-left" rowspan="1" colspan="1">Required</th>
+              <th class="text-left" rowspan="1" colspan="1">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">role</td>
+              <td class="text-left" rowspan="1" colspan="1">string</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">REQUIRED</span>
+</td>
+              <td class="text-left" rowspan="1" colspan="1">One of: "system", "user", "assistant", "tool".</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">content</td>
+              <td class="text-left" rowspan="1" colspan="1">string or array</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">REQUIRED</span>
+</td>
+              <td class="text-left" rowspan="1" colspan="1">The message content.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">name</td>
+              <td class="text-left" rowspan="1" colspan="1">string</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">OPTIONAL</span>
+</td>
+              <td class="text-left" rowspan="1" colspan="1">Display name for the participant.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">tool_call_id</td>
+              <td class="text-left" rowspan="1" colspan="1">string</td>
+              <td class="text-left" rowspan="1" colspan="1">CONDITIONAL</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">REQUIRED</span> when role is "tool".</td>
+            </tr>
+          </tbody>
+        </table>
+<p id="section-4.3-3">The role field identifies who produced the message:<a href="#section-4.3-3" class="pilcrow">¶</a></p>
+<span class="break"></span><dl class="dlParallel" id="section-4.3-4">
+          <dt id="section-4.3-4.1">"system":</dt>
+          <dd style="margin-left: 1.5em" id="section-4.3-4.2">
+            <p id="section-4.3-4.2.1">Instructions that configure the model's behavior for the conversation. Typically the first message. Not visible to end users.<a href="#section-4.3-4.2.1" class="pilcrow">¶</a></p>
+</dd>
+          <dd class="break"></dd>
+<dt id="section-4.3-4.3">"user":</dt>
+          <dd style="margin-left: 1.5em" id="section-4.3-4.4">
+            <p id="section-4.3-4.4.1">Input from the end user: the prompt, question, or instruction the model should respond to.<a href="#section-4.3-4.4.1" class="pilcrow">¶</a></p>
+</dd>
+          <dd class="break"></dd>
+<dt id="section-4.3-4.5">"assistant":</dt>
+          <dd style="margin-left: 1.5em" id="section-4.3-4.6">
+            <p id="section-4.3-4.6.1">The model's own prior responses. Included in multi-turn conversations so the model has context of what it previously generated.<a href="#section-4.3-4.6.1" class="pilcrow">¶</a></p>
+</dd>
+          <dd class="break"></dd>
+<dt id="section-4.3-4.7">"tool":</dt>
+          <dd style="margin-left: 1.5em" id="section-4.3-4.8">
+            <p id="section-4.3-4.8.1">A result returned from a tool invocation. When the model requests a tool call (via a tool.call event in the response), the client executes the tool locally and sends the result back as a "tool" message in the next request. The tool_call_id field <span class="bcp14">MUST</span> reference the id from the corresponding tool.call event.<a href="#section-4.3-4.8.1" class="pilcrow">¶</a></p>
+</dd>
+        <dd class="break"></dd>
+</dl>
+<p id="section-4.3-5">A typical multi-turn conversation:<a href="#section-4.3-5" class="pilcrow">¶</a></p>
+<div class="lang-json sourcecode" id="section-4.3-6">
+<pre>
+"messages": [
+  {"role": "system",
+   "content": "You are a coding assistant."},
+  {"role": "user",
+   "content": "Write a Python function to sort a list."},
+  {"role": "assistant",
+   "content": "def sort_list(items):\n    return sorted(items)"},
+  {"role": "user",
+   "content": "Now make it sort in reverse order."}
+]
+</pre><a href="#section-4.3-6" class="pilcrow">¶</a>
+</div>
+<div id="the-content-field">
+<section id="section-4.3.1">
+          <h4 id="name-the-content-field">
+<a href="#section-4.3.1" class="section-number selfRef">4.3.1. </a><a href="#name-the-content-field" class="section-name selfRef">The Content Field</a>
+          </h4>
+<p id="section-4.3.1-1">The content field takes one of two forms depending on whether the message contains only text or includes non-text attachments.<a href="#section-4.3.1-1" class="pilcrow">¶</a></p>
+<p id="section-4.3.1-2">Text-only messages use a simple string:<a href="#section-4.3.1-2" class="pilcrow">¶</a></p>
+<div class="lang-json sourcecode" id="section-4.3.1-3">
+<pre>
+{"role": "user", "content": "What is the capital of France?"}
+</pre><a href="#section-4.3.1-3" class="pilcrow">¶</a>
+</div>
+<p id="section-4.3.1-4">Multimodal messages use an array of typed content parts:<a href="#section-4.3.1-4" class="pilcrow">¶</a></p>
+<div class="lang-json sourcecode" id="section-4.3.1-5">
+<pre>
+{"role": "user", "content": [
+  {"type": "text", "text": "What is shown in this image?"},
+  {"type": "image", "media_type": "image/png",
+   "data": "&lt;base64-encoded image&gt;"}
+]}
+</pre><a href="#section-4.3.1-5" class="pilcrow">¶</a>
+</div>
+<table class="center" id="table-3">
+            <caption><a href="#table-3" class="selfRef">Table 3</a></caption>
+<thead>
+              <tr>
+                <th class="text-left" rowspan="1" colspan="1">Type</th>
+                <th class="text-left" rowspan="1" colspan="1">Required Fields</th>
+                <th class="text-left" rowspan="1" colspan="1">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">"text"</td>
+                <td class="text-left" rowspan="1" colspan="1">text</td>
+                <td class="text-left" rowspan="1" colspan="1">Plain text content.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">"image"</td>
+                <td class="text-left" rowspan="1" colspan="1">media_type, data</td>
+                <td class="text-left" rowspan="1" colspan="1">Base64-encoded image.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">"document"</td>
+                <td class="text-left" rowspan="1" colspan="1">media_type, data</td>
+                <td class="text-left" rowspan="1" colspan="1">Base64-encoded document.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">"audio"</td>
+                <td class="text-left" rowspan="1" colspan="1">media_type, data</td>
+                <td class="text-left" rowspan="1" colspan="1">Base64-encoded audio.</td>
+              </tr>
+            </tbody>
+          </table>
+<p id="section-4.3.1-7">When content is a string, it is semantically equivalent to an array containing a single text part. Implementations <span class="bcp14">MUST</span> support both forms.<a href="#section-4.3.1-7" class="pilcrow">¶</a></p>
+</section>
+</div>
+</section>
+</div>
+<div id="tools">
+<section id="section-4.4">
+        <h3 id="name-tools-function-declarations">
+<a href="#section-4.4" class="section-number selfRef">4.4. </a><a href="#name-tools-function-declarations" class="section-name selfRef">Tools (Function Declarations)</a>
+        </h3>
+<p id="section-4.4-1">The tools field is an optional array of tool definitions. These are NOT part of the conversation; they are declarations of capabilities that the client can execute locally if the model decides to invoke them.<a href="#section-4.4-1" class="pilcrow">¶</a></p>
+<p id="section-4.4-2">The model reads these definitions and, when it determines that a tool would help answer the user's request, emits a tool.call event in the response stream instead of generating text. The model itself does not execute anything; it outputs a structured request asking the client to run the specified function with the given arguments.<a href="#section-4.4-2" class="pilcrow">¶</a></p>
+<table class="center" id="table-4">
+          <caption><a href="#table-4" class="selfRef">Table 4</a></caption>
+<thead>
+            <tr>
+              <th class="text-left" rowspan="1" colspan="1">Field</th>
+              <th class="text-left" rowspan="1" colspan="1">Type</th>
+              <th class="text-left" rowspan="1" colspan="1">Required</th>
+              <th class="text-left" rowspan="1" colspan="1">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">name</td>
+              <td class="text-left" rowspan="1" colspan="1">string</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">REQUIRED</span>
+</td>
+              <td class="text-left" rowspan="1" colspan="1">Function name.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">description</td>
+              <td class="text-left" rowspan="1" colspan="1">string</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">REQUIRED</span>
+</td>
+              <td class="text-left" rowspan="1" colspan="1">Human-readable description.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">parameters</td>
+              <td class="text-left" rowspan="1" colspan="1">object</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">REQUIRED</span>
+</td>
+              <td class="text-left" rowspan="1" colspan="1">JSON Schema for input parameters.</td>
+            </tr>
+          </tbody>
+        </table>
+<div class="lang-json sourcecode" id="section-4.4-4">
+<pre>
+"tools": [
+  {"name": "get_weather",
+   "description": "Get current weather for a city.",
+   "parameters": {
+     "type": "object",
+     "properties": {
+       "city": {"type": "string",
+                "description": "City name, e.g. Vienna"},
+       "units": {"type": "string",
+                 "enum": ["celsius", "fahrenheit"]}
+     },
+     "required": ["city"]
+   }}
+]
+</pre><a href="#section-4.4-4" class="pilcrow">¶</a>
+</div>
+<p id="section-4.4-5">The complete tool interaction flow is described in <a href="#tool-flow" class="auto internal xref">Section 4.8</a>.<a href="#section-4.4-5" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="gen-parameters">
+<section id="section-4.5">
+        <h3 id="name-generation-parameters">
+<a href="#section-4.5" class="section-number selfRef">4.5. </a><a href="#name-generation-parameters" class="section-name selfRef">Generation Parameters</a>
+        </h3>
+<p id="section-4.5-1">The parameters field contains knobs that control how the model generates its response.<a href="#section-4.5-1" class="pilcrow">¶</a></p>
+<table class="center" id="table-5">
+          <caption><a href="#table-5" class="selfRef">Table 5</a></caption>
+<thead>
+            <tr>
+              <th class="text-left" rowspan="1" colspan="1">Field</th>
+              <th class="text-left" rowspan="1" colspan="1">Type</th>
+              <th class="text-left" rowspan="1" colspan="1">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">max_tokens</td>
+              <td class="text-left" rowspan="1" colspan="1">integer</td>
+              <td class="text-left" rowspan="1" colspan="1">Maximum number of tokens to generate.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">temperature</td>
+              <td class="text-left" rowspan="1" colspan="1">number</td>
+              <td class="text-left" rowspan="1" colspan="1">Randomness. 0.0 = deterministic, 1.0 = creative.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">top_p</td>
+              <td class="text-left" rowspan="1" colspan="1">number</td>
+              <td class="text-left" rowspan="1" colspan="1">Nucleus sampling threshold.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">stop_sequences</td>
+              <td class="text-left" rowspan="1" colspan="1">array</td>
+              <td class="text-left" rowspan="1" colspan="1">Strings that immediately end generation.</td>
+            </tr>
+          </tbody>
+        </table>
+<p id="section-4.5-3">All fields within parameters are <span class="bcp14">OPTIONAL</span>. Vendors <span class="bcp14">MAY</span> define additional parameters. Unknown parameters <span class="bcp14">MUST</span> be ignored.<a href="#section-4.5-3" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="metadata-field">
+<section id="section-4.6">
+        <h3 id="name-request-metadata">
+<a href="#section-4.6" class="section-number selfRef">4.6. </a><a href="#name-request-metadata" class="section-name selfRef">Request Metadata</a>
+        </h3>
+<p id="section-4.6-1">The metadata field carries request-level information for tracing, billing, and audit. This data is NOT sent to the model and does NOT influence generation.<a href="#section-4.6-1" class="pilcrow">¶</a></p>
+<div class="lang-json sourcecode" id="section-4.6-2">
+<pre>
+"metadata": {
+  "request_id": "550e8400-e29b-41d4-a716-446655440000",
+  "user_id": "user-12345",
+  "session_id": "sess-67890"
+}
+</pre><a href="#section-4.6-2" class="pilcrow">¶</a>
+</div>
+<p id="section-4.6-3">The request_id field, if present, <span class="bcp14">SHOULD</span> be echoed in the stream.start and stream.end response events.<a href="#section-4.6-3" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="extensions-field">
+<section id="section-4.7">
+        <h3 id="name-vendor-extensions">
+<a href="#section-4.7" class="section-number selfRef">4.7. </a><a href="#name-vendor-extensions" class="section-name selfRef">Vendor Extensions</a>
+        </h3>
+<p id="section-4.7-1">The extensions field is an escape hatch for vendor-specific features. Keys <span class="bcp14">MUST</span> be namespaced using the format "vendor:name" to prevent collisions.<a href="#section-4.7-1" class="pilcrow">¶</a></p>
+<div class="lang-json sourcecode" id="section-4.7-2">
+<pre>
+"extensions": {
+  "vendor:openai": {"logprobs": true},
+  "vendor:anthropic": {
+    "thinking": {"type": "enabled",
+                 "budget_tokens": 10000}}
+}
+</pre><a href="#section-4.7-2" class="pilcrow">¶</a>
+</div>
+<p id="section-4.7-3">Conforming implementations <span class="bcp14">MUST</span> ignore extension namespaces they do not recognize.<a href="#section-4.7-3" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="tool-flow">
+<section id="section-4.8">
+        <h3 id="name-tool-interaction-model">
+<a href="#section-4.8" class="section-number selfRef">4.8. </a><a href="#name-tool-interaction-model" class="section-name selfRef">Tool Interaction Model</a>
+        </h3>
+<p id="section-4.8-1">The model is stateless and cannot execute tools itself; it can only emit a structured request for the client to execute a tool on its behalf.<a href="#section-4.8-1" class="pilcrow">¶</a></p>
+<ol start="1" type="1" class="normal type-1" id="section-4.8-2">
+<li id="section-4.8-2.1">
+            <p id="section-4.8-2.1.1">The client sends a request with messages and tools.<a href="#section-4.8-2.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li id="section-4.8-2.2">
+            <p id="section-4.8-2.2.1">The model emits a tool.call event with the tool name and arguments, followed by content.stop with stop_reason "tool_use".<a href="#section-4.8-2.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li id="section-4.8-2.3">
+            <p id="section-4.8-2.3.1">The client executes the named function locally.<a href="#section-4.8-2.3.1" class="pilcrow">¶</a></p>
+</li>
+          <li id="section-4.8-2.4">
+            <p id="section-4.8-2.4.1">The client sends a new request with the original history, the assistant's tool call, and a "tool" role message with the result.<a href="#section-4.8-2.4.1" class="pilcrow">¶</a></p>
+</li>
+          <li id="section-4.8-2.5">
+            <p id="section-4.8-2.5.1">The model reads the tool result and generates its final text response.<a href="#section-4.8-2.5.1" class="pilcrow">¶</a></p>
+</li>
+        </ol>
+<div class="alignLeft art-text artwork" id="section-4.8-3">
+<pre>
+Request 1:
+{"messages": [{"role": "user",
+  "content": "What is the weather in Vienna?"}],
+ "tools": [{"name": "get_weather", ...}]}
+
+Response 1:
+event: tool.call
+data: {"type":"tool.call","id":"call_1",
+  "name":"get_weather",
+  "arguments":"{\"city\":\"Vienna\"}"}
+event: content.stop
+data: {"type":"content.stop",
+  "stop_reason":"tool_use"}
+
+Client executes get_weather("Vienna"), gets result.
+
+Request 2:
+{"messages": [
+  {"role": "user",
+   "content": "What is the weather in Vienna?"},
+  {"role": "assistant", "content": null,
+   "tool_calls": [{"id": "call_1",
+     "name": "get_weather",
+     "arguments": "{\"city\":\"Vienna\"}"}]},
+  {"role": "tool", "tool_call_id": "call_1",
+   "content": "Vienna: 24C, sunny"}],
+ "tools": [{"name": "get_weather", ...}]}
+
+Response 2:
+event: content.delta
+data: {"type":"content.delta",
+  "delta":{"text":"The weather in Vienna is 24C."}}
+</pre><a href="#section-4.8-3" class="pilcrow">¶</a>
+</div>
+<p id="section-4.8-4">The tool definitions travel with every request because the model is stateless.<a href="#section-4.8-4" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="response-media-type">
+<section id="section-4.9">
+        <h3 id="name-response-media-type">
+<a href="#section-4.9" class="section-number selfRef">4.9. </a><a href="#name-response-media-type" class="section-name selfRef">Response Media Type</a>
+        </h3>
+<p id="section-4.9-1">The SSE response uses the standard text/event-stream media type. Conformance is signaled by the combination of application/llm-request+json on the request and a stream.start event as the first event in the response.<a href="#section-4.9-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+</section>
+</div>
+<div id="response-streaming-format">
+<section id="section-5">
+      <h2 id="name-response-streaming-format">
+<a href="#section-5" class="section-number selfRef">5. </a><a href="#name-response-streaming-format" class="section-name selfRef">Response Streaming Format</a>
+      </h2>
+<p id="section-5-1">The response is delivered as a Server-Sent Events (SSE) stream over HTTP.<a href="#section-5-1" class="pilcrow">¶</a></p>
+<div id="sse-event-framing">
+<section id="section-5.1">
+        <h3 id="name-sse-event-framing">
+<a href="#section-5.1" class="section-number selfRef">5.1. </a><a href="#name-sse-event-framing" class="section-name selfRef">SSE Event Framing</a>
+        </h3>
+<p id="section-5.1-1">Each event on the wire consists of field lines followed by a blank line:<a href="#section-5.1-1" class="pilcrow">¶</a></p>
+<div class="alignLeft art-text artwork" id="section-5.1-2">
+<pre>
+event: &lt;event-type&gt;\n
+data: &lt;JSON event envelope&gt;\n
+\n
+</pre><a href="#section-5.1-2" class="pilcrow">¶</a>
+</div>
+<p id="section-5.1-3">The blank line (\n\n) is the event boundary. The HTTP transport may split bytes arbitrarily across frames or chunks; the SSE layer reassembles them.<a href="#section-5.1-3" class="pilcrow">¶</a></p>
+<div class="alignLeft art-text artwork" id="section-5.1-4">
+<pre>
+HTTP layer:  Delivers raw bytes (DATA frames / chunks)
+                  |
+SSE layer:   Reassembles lines, uses \n\n as boundary
+                  |
+This spec:   Parses JSON envelope from data: field
+</pre><a href="#section-5.1-4" class="pilcrow">¶</a>
+</div>
+<p id="section-5.1-5">The following constraints <span class="bcp14">MUST</span> be observed:<a href="#section-5.1-5" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-5.1-6.1">
+            <p id="section-5.1-6.1.1">Each SSE event <span class="bcp14">MUST</span> contain exactly one complete, valid JSON object in its data: field.<a href="#section-5.1-6.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-5.1-6.2">
+            <p id="section-5.1-6.2.1">A JSON event envelope <span class="bcp14">MUST NOT</span> span multiple SSE events.<a href="#section-5.1-6.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-5.1-6.3">
+            <p id="section-5.1-6.3.1">An endpoint <span class="bcp14">MUST NOT</span> emit partial JSON that requires a subsequent SSE event to complete.<a href="#section-5.1-6.3.1" class="pilcrow">¶</a></p>
+</li>
+        </ul>
+</section>
+</div>
+<div id="event-envelope">
+<section id="section-5.2">
+        <h3 id="name-event-envelope">
+<a href="#section-5.2" class="section-number selfRef">5.2. </a><a href="#name-event-envelope" class="section-name selfRef">Event Envelope</a>
+        </h3>
+<p id="section-5.2-1">Every event carries a JSON object with three common fields:<a href="#section-5.2-1" class="pilcrow">¶</a></p>
+<table class="center" id="table-6">
+          <caption><a href="#table-6" class="selfRef">Table 6</a></caption>
+<thead>
+            <tr>
+              <th class="text-left" rowspan="1" colspan="1">Field</th>
+              <th class="text-left" rowspan="1" colspan="1">Type</th>
+              <th class="text-left" rowspan="1" colspan="1">Required</th>
+              <th class="text-left" rowspan="1" colspan="1">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">v</td>
+              <td class="text-left" rowspan="1" colspan="1">string</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">REQUIRED</span>
+</td>
+              <td class="text-left" rowspan="1" colspan="1">Protocol version. <span class="bcp14">MUST</span> be "1.0".</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">seq</td>
+              <td class="text-left" rowspan="1" colspan="1">integer</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">REQUIRED</span>
+</td>
+              <td class="text-left" rowspan="1" colspan="1">Zero-based, monotonically increasing.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">type</td>
+              <td class="text-left" rowspan="1" colspan="1">string</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <span class="bcp14">REQUIRED</span>
+</td>
+              <td class="text-left" rowspan="1" colspan="1">Event type. <span class="bcp14">MUST</span> match SSE event: field.</td>
+            </tr>
+          </tbody>
+        </table>
+<p id="section-5.2-3">The envelope follows a TLV-style structure:<a href="#section-5.2-3" class="pilcrow">¶</a></p>
+<span class="break"></span><dl class="dlParallel" id="section-5.2-4">
+          <dt id="section-5.2-4.1">T (Type):</dt>
+          <dd style="margin-left: 1.5em" id="section-5.2-4.2">
+            <p id="section-5.2-4.2.1">The SSE event: field. Identifies the event type without parsing JSON.<a href="#section-5.2-4.2.1" class="pilcrow">¶</a></p>
+</dd>
+          <dd class="break"></dd>
+<dt id="section-5.2-4.3">L (Length):</dt>
+          <dd style="margin-left: 1.5em" id="section-5.2-4.4">
+            <p id="section-5.2-4.4.1">Implicit. The SSE \n\n boundary defines the extent of the JSON body. See <a href="#framing-tradeoff" class="auto internal xref">Section 6</a>.<a href="#section-5.2-4.4.1" class="pilcrow">¶</a></p>
+</dd>
+          <dd class="break"></dd>
+<dt id="section-5.2-4.5">V (Value):</dt>
+          <dd style="margin-left: 1.5em" id="section-5.2-4.6">
+            <p id="section-5.2-4.6.1">The JSON event envelope in the data: field.<a href="#section-5.2-4.6.1" class="pilcrow">¶</a></p>
+</dd>
+        <dd class="break"></dd>
+</dl>
+<p id="section-5.2-5">Conforming parsers <span class="bcp14">MUST</span> ignore unknown fields (forward compatibility).<a href="#section-5.2-5" class="pilcrow">¶</a></p>
+<div id="sequence-numbers">
+<section id="section-5.2.1">
+          <h4 id="name-sequence-numbers">
+<a href="#section-5.2.1" class="section-number selfRef">5.2.1. </a><a href="#name-sequence-numbers" class="section-name selfRef">Sequence Numbers</a>
+          </h4>
+<p id="section-5.2.1-1">The seq field is zero-based, incrementing by one per event. stream.start <span class="bcp14">MUST</span> have seq 0.<a href="#section-5.2.1-1" class="pilcrow">¶</a></p>
+<ol start="1" type="1" class="normal type-1" id="section-5.2.1-2">
+<li id="section-5.2.1-2.1">
+              <p id="section-5.2.1-2.1.1">Gap detection: seq values 0, 1, 2, 5 indicates events 3 and 4 were lost.<a href="#section-5.2.1-2.1.1" class="pilcrow">¶</a></p>
+</li>
+            <li id="section-5.2.1-2.2">
+              <p id="section-5.2.1-2.2.1">Ordering: provides canonical ordering when events are buffered.<a href="#section-5.2.1-2.2.1" class="pilcrow">¶</a></p>
+</li>
+          </ol>
+</section>
+</div>
+</section>
+</div>
+<div id="event-types">
+<section id="section-5.3">
+        <h3 id="name-event-types">
+<a href="#section-5.3" class="section-number selfRef">5.3. </a><a href="#name-event-types" class="section-name selfRef">Event Types</a>
+        </h3>
+<table class="center" id="table-7">
+          <caption><a href="#table-7" class="selfRef">Table 7</a></caption>
+<thead>
+            <tr>
+              <th class="text-left" rowspan="1" colspan="1">Event Type</th>
+              <th class="text-left" rowspan="1" colspan="1">Direction</th>
+              <th class="text-left" rowspan="1" colspan="1">Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">stream.start</td>
+              <td class="text-left" rowspan="1" colspan="1">First</td>
+              <td class="text-left" rowspan="1" colspan="1">Stream initiation, request metadata</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">content.delta</td>
+              <td class="text-left" rowspan="1" colspan="1">Repeated</td>
+              <td class="text-left" rowspan="1" colspan="1">Incremental text fragment</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">content.stop</td>
+              <td class="text-left" rowspan="1" colspan="1">Once/block</td>
+              <td class="text-left" rowspan="1" colspan="1">End of content block with stop reason</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">tool.call</td>
+              <td class="text-left" rowspan="1" colspan="1">Zero or more</td>
+              <td class="text-left" rowspan="1" colspan="1">Model requests tool invocation</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">usage</td>
+              <td class="text-left" rowspan="1" colspan="1">One or more</td>
+              <td class="text-left" rowspan="1" colspan="1">Token consumption</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">error</td>
+              <td class="text-left" rowspan="1" colspan="1">Zero or one</td>
+              <td class="text-left" rowspan="1" colspan="1">Generation error</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">stream.end</td>
+              <td class="text-left" rowspan="1" colspan="1">Last</td>
+              <td class="text-left" rowspan="1" colspan="1">Clean stream termination</td>
+            </tr>
+          </tbody>
+        </table>
+<div id="stream-start">
+<section id="section-5.3.1">
+          <h4 id="name-streamstart">
+<a href="#section-5.3.1" class="section-number selfRef">5.3.1. </a><a href="#name-streamstart" class="section-name selfRef">stream.start</a>
+          </h4>
+<p id="section-5.3.1-1"><span class="bcp14">MUST</span> be the first event. Signals the endpoint has accepted the request.<a href="#section-5.3.1-1" class="pilcrow">¶</a></p>
+<table class="center" id="table-8">
+            <caption><a href="#table-8" class="selfRef">Table 8</a></caption>
+<thead>
+              <tr>
+                <th class="text-left" rowspan="1" colspan="1">Field</th>
+                <th class="text-left" rowspan="1" colspan="1">Type</th>
+                <th class="text-left" rowspan="1" colspan="1">Required</th>
+                <th class="text-left" rowspan="1" colspan="1">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">v</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">"1.0"</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">seq</td>
+                <td class="text-left" rowspan="1" colspan="1">integer</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">MUST</span> be 0.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">type</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">"stream.start"</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">request_id</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">OPTIONAL</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Echoed from request metadata.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">model</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Model generating the response.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">created</td>
+                <td class="text-left" rowspan="1" colspan="1">integer</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Unix timestamp (seconds).</td>
+              </tr>
+            </tbody>
+          </table>
+<div class="alignLeft art-text artwork" id="section-5.3.1-3">
+<pre>
+event: stream.start
+data: {"v":"1.0","seq":0,"type":"stream.start",
+  "request_id":"550e8400-...",
+  "model":"example-model","created":1749292800}
+</pre><a href="#section-5.3.1-3" class="pilcrow">¶</a>
+</div>
+</section>
+</div>
+<div id="content-delta">
+<section id="section-5.3.2">
+          <h4 id="name-contentdelta">
+<a href="#section-5.3.2" class="section-number selfRef">5.3.2. </a><a href="#name-contentdelta" class="section-name selfRef">content.delta</a>
+          </h4>
+<p id="section-5.3.2-1">Carries an incremental text fragment. Most frequent event in a stream.<a href="#section-5.3.2-1" class="pilcrow">¶</a></p>
+<table class="center" id="table-9">
+            <caption><a href="#table-9" class="selfRef">Table 9</a></caption>
+<thead>
+              <tr>
+                <th class="text-left" rowspan="1" colspan="1">Field</th>
+                <th class="text-left" rowspan="1" colspan="1">Type</th>
+                <th class="text-left" rowspan="1" colspan="1">Required</th>
+                <th class="text-left" rowspan="1" colspan="1">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">v</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">"1.0"</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">seq</td>
+                <td class="text-left" rowspan="1" colspan="1">integer</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Sequence number.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">type</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">"content.delta"</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">index</td>
+                <td class="text-left" rowspan="1" colspan="1">integer</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Content block index. 0 for primary.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">role</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">"assistant".</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">delta</td>
+                <td class="text-left" rowspan="1" colspan="1">object</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Contains incremental content.</td>
+              </tr>
+            </tbody>
+          </table>
+<span class="break"></span><dl class="dlParallel" id="section-5.3.2-3">
+            <dt id="section-5.3.2-3.1">delta.text (string, <span class="bcp14">REQUIRED</span>):</dt>
+            <dd style="margin-left: 1.5em" id="section-5.3.2-3.2">
+              <p id="section-5.3.2-3.2.1">The generated text fragment. This is the canonical field for generated text: the single location where generated content always appears, regardless of vendor. Standardizing this path is the primary goal of this specification.<a href="#section-5.3.2-3.2.1" class="pilcrow">¶</a></p>
+</dd>
+          <dd class="break"></dd>
+</dl>
+<div class="alignLeft art-text artwork" id="section-5.3.2-4">
+<pre>
+event: content.delta
+data: {"v":"1.0","seq":1,"type":"content.delta",
+  "index":0,"role":"assistant",
+  "delta":{"text":"The weather in Vienna"}}
+
+event: content.delta
+data: {"v":"1.0","seq":2,"type":"content.delta",
+  "index":0,"role":"assistant",
+  "delta":{"text":" is currently 24C"}}
+
+event: content.delta
+data: {"v":"1.0","seq":3,"type":"content.delta",
+  "index":0,"role":"assistant",
+  "delta":{"text":" and sunny."}}
+</pre><a href="#section-5.3.2-4" class="pilcrow">¶</a>
+</div>
+<p id="section-5.3.2-5">Concatenating delta.text from seq 1 through 3 produces: "The weather in Vienna is currently 24C and sunny."<a href="#section-5.3.2-5" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="content-stop">
+<section id="section-5.3.3">
+          <h4 id="name-contentstop">
+<a href="#section-5.3.3" class="section-number selfRef">5.3.3. </a><a href="#name-contentstop" class="section-name selfRef">content.stop</a>
+          </h4>
+<p id="section-5.3.3-1">Signals the end of a content block.<a href="#section-5.3.3-1" class="pilcrow">¶</a></p>
+<table class="center" id="table-10">
+            <caption><a href="#table-10" class="selfRef">Table 10</a></caption>
+<thead>
+              <tr>
+                <th class="text-left" rowspan="1" colspan="1">Field</th>
+                <th class="text-left" rowspan="1" colspan="1">Type</th>
+                <th class="text-left" rowspan="1" colspan="1">Required</th>
+                <th class="text-left" rowspan="1" colspan="1">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">v</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">"1.0"</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">seq</td>
+                <td class="text-left" rowspan="1" colspan="1">integer</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Sequence number.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">type</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">"content.stop"</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">index</td>
+                <td class="text-left" rowspan="1" colspan="1">integer</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Block index being terminated.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">stop_reason</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Why generation stopped.</td>
+              </tr>
+            </tbody>
+          </table>
+<p id="section-5.3.3-3">stop_reason values:<a href="#section-5.3.3-3" class="pilcrow">¶</a></p>
+<span class="break"></span><dl class="dlParallel" id="section-5.3.3-4">
+            <dt id="section-5.3.3-4.1">"end_turn":</dt>
+            <dd style="margin-left: 1.5em" id="section-5.3.3-4.2">
+              <p id="section-5.3.3-4.2.1">The model finished its response naturally.<a href="#section-5.3.3-4.2.1" class="pilcrow">¶</a></p>
+</dd>
+            <dd class="break"></dd>
+<dt id="section-5.3.3-4.3">"max_tokens":</dt>
+            <dd style="margin-left: 1.5em" id="section-5.3.3-4.4">
+              <p id="section-5.3.3-4.4.1">Generation reached the max_tokens limit.<a href="#section-5.3.3-4.4.1" class="pilcrow">¶</a></p>
+</dd>
+            <dd class="break"></dd>
+<dt id="section-5.3.3-4.5">"tool_use":</dt>
+            <dd style="margin-left: 1.5em" id="section-5.3.3-4.6">
+              <p id="section-5.3.3-4.6.1">The model is requesting a tool invocation.<a href="#section-5.3.3-4.6.1" class="pilcrow">¶</a></p>
+</dd>
+            <dd class="break"></dd>
+<dt id="section-5.3.3-4.7">"content_filter":</dt>
+            <dd style="margin-left: 1.5em" id="section-5.3.3-4.8">
+              <p id="section-5.3.3-4.8.1">The endpoint's safety system terminated generation.<a href="#section-5.3.3-4.8.1" class="pilcrow">¶</a></p>
+</dd>
+          <dd class="break"></dd>
+</dl>
+</section>
+</div>
+<div id="tool-call">
+<section id="section-5.3.4">
+          <h4 id="name-toolcall">
+<a href="#section-5.3.4" class="section-number selfRef">5.3.4. </a><a href="#name-toolcall" class="section-name selfRef">tool.call</a>
+          </h4>
+<p id="section-5.3.4-1">Emitted when the model determines a tool invocation would help. The model does not execute the tool; it outputs a structured request for the client. See <a href="#tool-flow" class="auto internal xref">Section 4.8</a>.<a href="#section-5.3.4-1" class="pilcrow">¶</a></p>
+<table class="center" id="table-11">
+            <caption><a href="#table-11" class="selfRef">Table 11</a></caption>
+<thead>
+              <tr>
+                <th class="text-left" rowspan="1" colspan="1">Field</th>
+                <th class="text-left" rowspan="1" colspan="1">Type</th>
+                <th class="text-left" rowspan="1" colspan="1">Required</th>
+                <th class="text-left" rowspan="1" colspan="1">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">v</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">"1.0"</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">seq</td>
+                <td class="text-left" rowspan="1" colspan="1">integer</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Sequence number.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">type</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">"tool.call"</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">index</td>
+                <td class="text-left" rowspan="1" colspan="1">integer</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Content block index.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">id</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Unique invocation identifier.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">name</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Function name from request tools.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">arguments</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">JSON-encoded function arguments.</td>
+              </tr>
+            </tbody>
+          </table>
+</section>
+</div>
+<div id="usage">
+<section id="section-5.3.5">
+          <h4 id="name-usage">
+<a href="#section-5.3.5" class="section-number selfRef">5.3.5. </a><a href="#name-usage" class="section-name selfRef">usage</a>
+          </h4>
+<p id="section-5.3.5-1">Reports token consumption for billing, cost tracking, and quota management.<a href="#section-5.3.5-1" class="pilcrow">¶</a></p>
+<table class="center" id="table-12">
+            <caption><a href="#table-12" class="selfRef">Table 12</a></caption>
+<thead>
+              <tr>
+                <th class="text-left" rowspan="1" colspan="1">Field</th>
+                <th class="text-left" rowspan="1" colspan="1">Type</th>
+                <th class="text-left" rowspan="1" colspan="1">Required</th>
+                <th class="text-left" rowspan="1" colspan="1">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">v</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">"1.0"</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">seq</td>
+                <td class="text-left" rowspan="1" colspan="1">integer</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Sequence number.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">type</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">"usage"</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">input_tokens</td>
+                <td class="text-left" rowspan="1" colspan="1">integer</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Tokens in the request.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">output_tokens</td>
+                <td class="text-left" rowspan="1" colspan="1">integer</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Tokens generated.</td>
+              </tr>
+            </tbody>
+          </table>
+<p id="section-5.3.5-3"><span class="bcp14">MAY</span> appear mid-stream or near stream end. At least one <span class="bcp14">SHOULD</span> be emitted per stream.<a href="#section-5.3.5-3" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="error">
+<section id="section-5.3.6">
+          <h4 id="name-error">
+<a href="#section-5.3.6" class="section-number selfRef">5.3.6. </a><a href="#name-error" class="section-name selfRef">error</a>
+          </h4>
+<p id="section-5.3.6-1">Signals a generation error. After an error, the endpoint <span class="bcp14">SHOULD</span> send stream.end.<a href="#section-5.3.6-1" class="pilcrow">¶</a></p>
+<table class="center" id="table-13">
+            <caption><a href="#table-13" class="selfRef">Table 13</a></caption>
+<thead>
+              <tr>
+                <th class="text-left" rowspan="1" colspan="1">Field</th>
+                <th class="text-left" rowspan="1" colspan="1">Type</th>
+                <th class="text-left" rowspan="1" colspan="1">Required</th>
+                <th class="text-left" rowspan="1" colspan="1">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">v</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">"1.0"</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">seq</td>
+                <td class="text-left" rowspan="1" colspan="1">integer</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Sequence number.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">type</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">"error"</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">code</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Machine-readable error code.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">message</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Human-readable description.</td>
+              </tr>
+            </tbody>
+          </table>
+<p id="section-5.3.6-3">Error codes: "rate_limited", "context_length_exceeded", "content_filtered", "internal_error", "overloaded".<a href="#section-5.3.6-3" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="stream-end">
+<section id="section-5.3.7">
+          <h4 id="name-streamend">
+<a href="#section-5.3.7" class="section-number selfRef">5.3.7. </a><a href="#name-streamend" class="section-name selfRef">stream.end</a>
+          </h4>
+<p id="section-5.3.7-1"><span class="bcp14">MUST</span> be the last event. After stream.end, no further events on this stream.<a href="#section-5.3.7-1" class="pilcrow">¶</a></p>
+<table class="center" id="table-14">
+            <caption><a href="#table-14" class="selfRef">Table 14</a></caption>
+<thead>
+              <tr>
+                <th class="text-left" rowspan="1" colspan="1">Field</th>
+                <th class="text-left" rowspan="1" colspan="1">Type</th>
+                <th class="text-left" rowspan="1" colspan="1">Required</th>
+                <th class="text-left" rowspan="1" colspan="1">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">v</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">"1.0"</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">seq</td>
+                <td class="text-left" rowspan="1" colspan="1">integer</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Final sequence number.</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">type</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">REQUIRED</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">"stream.end"</td>
+              </tr>
+              <tr>
+                <td class="text-left" rowspan="1" colspan="1">request_id</td>
+                <td class="text-left" rowspan="1" colspan="1">string</td>
+                <td class="text-left" rowspan="1" colspan="1">
+                  <span class="bcp14">OPTIONAL</span>
+</td>
+                <td class="text-left" rowspan="1" colspan="1">Echoed for correlation.</td>
+              </tr>
+            </tbody>
+          </table>
+</section>
+</div>
+</section>
+</div>
+<div id="stream-lifecycle">
+<section id="section-5.4">
+        <h3 id="name-stream-lifecycle">
+<a href="#section-5.4" class="section-number selfRef">5.4. </a><a href="#name-stream-lifecycle" class="section-name selfRef">Stream Lifecycle</a>
+        </h3>
+<ol start="1" type="1" class="normal type-1" id="section-5.4-1">
+<li id="section-5.4-1.1">
+            <p id="section-5.4-1.1.1">The stream begins with exactly one stream.start (seq 0).<a href="#section-5.4-1.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li id="section-5.4-1.2">
+            <p id="section-5.4-1.2.1">Zero or more content.delta events deliver text incrementally.<a href="#section-5.4-1.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li id="section-5.4-1.3">
+            <p id="section-5.4-1.3.1">Zero or more tool.call events request tool invocations.<a href="#section-5.4-1.3.1" class="pilcrow">¶</a></p>
+</li>
+          <li id="section-5.4-1.4">
+            <p id="section-5.4-1.4.1">Zero or more usage events report token consumption.<a href="#section-5.4-1.4.1" class="pilcrow">¶</a></p>
+</li>
+          <li id="section-5.4-1.5">
+            <p id="section-5.4-1.5.1">Each content block is terminated by content.stop.<a href="#section-5.4-1.5.1" class="pilcrow">¶</a></p>
+</li>
+          <li id="section-5.4-1.6">
+            <p id="section-5.4-1.6.1">If an error occurs, an error event is emitted.<a href="#section-5.4-1.6.1" class="pilcrow">¶</a></p>
+</li>
+          <li id="section-5.4-1.7">
+            <p id="section-5.4-1.7.1">The stream ends with exactly one stream.end.<a href="#section-5.4-1.7.1" class="pilcrow">¶</a></p>
+</li>
+        </ol>
+<div class="alignLeft art-text artwork" id="section-5.4-2">
+<pre>
+       POST request
+            |
+      stream.start (seq=0)
+            |
+       STREAMING
+      /    |    \
+content.delta tool.call usage
+      \    |    /
+    content.stop | error
+            |
+       stream.end
+            |
+         CLOSED
+</pre><a href="#section-5.4-2" class="pilcrow">¶</a>
+</div>
+</section>
+</div>
+<div id="complete-example">
+<section id="section-5.5">
+        <h3 id="name-complete-example">
+<a href="#section-5.5" class="section-number selfRef">5.5. </a><a href="#name-complete-example" class="section-name selfRef">Complete Example</a>
+        </h3>
+<div class="alignLeft art-text artwork" id="section-5.5-1">
+<pre>
+HTTP/2 200 OK
+Content-Type: text/event-stream
+Cache-Control: no-cache
+
+event: stream.start
+data: {"v":"1.0","seq":0,
+  "type":"stream.start",
+  "request_id":"550e8400-...",
+  "model":"example-model",
+  "created":1749292800}
+
+event: content.delta
+data: {"v":"1.0","seq":1,
+  "type":"content.delta",
+  "index":0,"role":"assistant",
+  "delta":{"text":"The"}}
+
+event: content.delta
+data: {"v":"1.0","seq":2,
+  "type":"content.delta",
+  "index":0,"role":"assistant",
+  "delta":{"text":" weather"}}
+
+event: content.delta
+data: {"v":"1.0","seq":3,
+  "type":"content.delta",
+  "index":0,"role":"assistant",
+  "delta":{"text":" in Vienna"}}
+
+event: content.delta
+data: {"v":"1.0","seq":4,
+  "type":"content.delta",
+  "index":0,"role":"assistant",
+  "delta":{"text":" is 24C and sunny."}}
+
+event: content.stop
+data: {"v":"1.0","seq":5,
+  "type":"content.stop",
+  "index":0,"stop_reason":"end_turn"}
+
+event: usage
+data: {"v":"1.0","seq":6,
+  "type":"usage",
+  "input_tokens":42,"output_tokens":8}
+
+event: stream.end
+data: {"v":"1.0","seq":7,
+  "type":"stream.end",
+  "request_id":"550e8400-..."}
+</pre><a href="#section-5.5-1" class="pilcrow">¶</a>
+</div>
+</section>
+</div>
+</section>
+</div>
+<div id="framing-tradeoff">
+<section id="section-6">
+      <h2 id="name-framing-design-trade-off">
+<a href="#section-6" class="section-number selfRef">6. </a><a href="#name-framing-design-trade-off" class="section-name selfRef">Framing Design Trade-off</a>
+      </h2>
+<div id="sse-text-based-framing-this-specification">
+<section id="section-6.1">
+        <h3 id="name-sse-text-based-framing-this">
+<a href="#section-6.1" class="section-number selfRef">6.1. </a><a href="#name-sse-text-based-framing-this" class="section-name selfRef">SSE Text-Based Framing (This Specification)</a>
+        </h3>
+<p id="section-6.1-1">SSE delimits events with \n\n. The parser must scan the byte stream to locate each boundary. This is O(n) per event.<a href="#section-6.1-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="length-prefixed-binary-framing-alternative">
+<section id="section-6.2">
+        <h3 id="name-length-prefixed-binary-fram">
+<a href="#section-6.2" class="section-number selfRef">6.2. </a><a href="#name-length-prefixed-binary-fram" class="section-name selfRef">Length-Prefixed Binary Framing (Alternative)</a>
+        </h3>
+<p id="section-6.2-1">A binary approach (e.g., gRPC's <span>[<a href="#gRPC" class="cite xref">gRPC</a>]</span> 5-byte envelope) prefixes each message with a type byte and 4-byte length. The parser reads the header and jumps directly to the next message. This is O(1) per boundary.<a href="#section-6.2-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="rationale-for-sse">
+<section id="section-6.3">
+        <h3 id="name-rationale-for-sse">
+<a href="#section-6.3" class="section-number selfRef">6.3. </a><a href="#name-rationale-for-sse" class="section-name selfRef">Rationale for SSE</a>
+        </h3>
+<ol start="1" type="1" class="normal type-1" id="section-6.3-1">
+<li id="section-6.3-1.1">
+            <p id="section-6.3-1.1.1">Compatibility: SSE is supported natively by browser EventSource and every major HTTP library. Binary framing would require custom parsers.<a href="#section-6.3-1.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li id="section-6.3-1.2">
+            <p id="section-6.3-1.2.1">Existing deployment: The five major SSE-based LLM providers would need minimal changes to adopt a standard JSON schema. Binary framing would require re-engineering their streaming pipeline.<a href="#section-6.3-1.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li id="section-6.3-1.3">
+            <p id="section-6.3-1.3.1">Debuggability: SSE events are human-readable in browser developer tools, curl, and log files.<a href="#section-6.3-1.3.1" class="pilcrow">¶</a></p>
+</li>
+          <li id="section-6.3-1.4">
+            <p id="section-6.3-1.4.1">Incremental adoption: The payload schema is transport-independent. The same event types and JSON envelope can be carried over SSE or a future binary binding without changes.<a href="#section-6.3-1.4.1" class="pilcrow">¶</a></p>
+</li>
+        </ol>
+<p id="section-6.3-2">A future companion document <span class="bcp14">MAY</span> define a binary transport binding, for example over WebTransport <span>[<a href="#W3C-WEBTRANSPORT" class="cite xref">W3C-WEBTRANSPORT</a>]</span>, that provides length-prefixed framing while reusing the same event types and JSON envelope.<a href="#section-6.3-2" class="pilcrow">¶</a></p>
+</section>
+</div>
+</section>
+</div>
+<div id="backward-compatibility">
+<section id="section-7">
+      <h2 id="name-backward-compatibility">
+<a href="#section-7" class="section-number selfRef">7. </a><a href="#name-backward-compatibility" class="section-name selfRef">Backward Compatibility</a>
+      </h2>
+<div id="api-gateway-translation">
+<section id="section-7.1">
+        <h3 id="name-api-gateway-translation">
+<a href="#section-7.1" class="section-number selfRef">7.1. </a><a href="#name-api-gateway-translation" class="section-name selfRef">API Gateway Translation</a>
+        </h3>
+<p id="section-7.1-1">An API gateway can accept vendor-specific requests, forward them to the upstream provider in their native format, and translate the response stream into the standard format before delivering it to the client.<a href="#section-7.1-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="content-type-negotiation">
+<section id="section-7.2">
+        <h3 id="name-content-type-negotiation">
+<a href="#section-7.2" class="section-number selfRef">7.2. </a><a href="#name-content-type-negotiation" class="section-name selfRef">Content-Type Negotiation</a>
+        </h3>
+<p id="section-7.2-1">If a client sends Content-Type: application/llm-request+json and the endpoint does not support the standard, it <span class="bcp14">SHOULD</span> return 415 Unsupported Media Type, allowing the client to fall back.<a href="#section-7.2-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="dual-format-endpoints">
+<section id="section-7.3">
+        <h3 id="name-dual-format-endpoints">
+<a href="#section-7.3" class="section-number selfRef">7.3. </a><a href="#name-dual-format-endpoints" class="section-name selfRef">Dual-Format Endpoints</a>
+        </h3>
+<p id="section-7.3-1">A vendor <span class="bcp14">MAY</span> support both formats, selected by the request Content-Type or an Accept header:<a href="#section-7.3-1" class="pilcrow">¶</a></p>
+<div class="alignLeft art-text artwork" id="section-7.3-2">
+<pre>
+Accept: text/event-stream; profile="llm-stream-1.0"
+</pre><a href="#section-7.3-2" class="pilcrow">¶</a>
+</div>
+</section>
+</div>
+</section>
+</div>
+<div id="security-considerations">
+<section id="section-8">
+      <h2 id="name-security-considerations">
+<a href="#section-8" class="section-number selfRef">8. </a><a href="#name-security-considerations" class="section-name selfRef">Security Considerations</a>
+      </h2>
+<div id="prompt-confidentiality">
+<section id="section-8.1">
+        <h3 id="name-prompt-confidentiality">
+<a href="#section-8.1" class="section-number selfRef">8.1. </a><a href="#name-prompt-confidentiality" class="section-name selfRef">Prompt Confidentiality</a>
+        </h3>
+<p id="section-8.1-1">Prompts in application/llm-request+json requests may contain highly sensitive data. Any system that logs or processes these requests <span class="bcp14">MUST</span> apply appropriate confidentiality protections.<a href="#section-8.1-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="tool-call-abuse">
+<section id="section-8.2">
+        <h3 id="name-tool-call-abuse">
+<a href="#section-8.2" class="section-number selfRef">8.2. </a><a href="#name-tool-call-abuse" class="section-name selfRef">Tool-Call Abuse</a>
+        </h3>
+<p id="section-8.2-1">A compromised or adversarial endpoint could emit tool.call events invoking sensitive tools. Client implementations <span class="bcp14">SHOULD</span> validate tool.call events against the set of tools declared in the original request and <span class="bcp14">SHOULD</span> require user confirmation before executing tool invocations with side effects.<a href="#section-8.2-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="extension-field-safety">
+<section id="section-8.3">
+        <h3 id="name-extension-field-safety">
+<a href="#section-8.3" class="section-number selfRef">8.3. </a><a href="#name-extension-field-safety" class="section-name selfRef">Extension Field Safety</a>
+        </h3>
+<p id="section-8.3-1">The extensions field allows vendor-specific data. Implementations <span class="bcp14">SHOULD NOT</span> interpret or execute extension values from untrusted sources.<a href="#section-8.3-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="sequence-exhaustion">
+<section id="section-8.4">
+        <h3 id="name-sequence-exhaustion">
+<a href="#section-8.4" class="section-number selfRef">8.4. </a><a href="#name-sequence-exhaustion" class="section-name selfRef">Sequence Exhaustion</a>
+        </h3>
+<p id="section-8.4-1">The seq field is an integer. Implementations <span class="bcp14">SHOULD</span> use 64-bit integers. A stream exceeding 2^53 events (the safe integer limit in JSON/JavaScript) is pathological and <span class="bcp14">SHOULD</span> be terminated.<a href="#section-8.4-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+</section>
+</div>
+<div id="iana-considerations">
+<section id="section-9">
+      <h2 id="name-iana-considerations">
+<a href="#section-9" class="section-number selfRef">9. </a><a href="#name-iana-considerations" class="section-name selfRef">IANA Considerations</a>
+      </h2>
+<div id="media-type-registration-applicationllm-requestjson">
+<section id="section-9.1">
+        <h3 id="name-media-type-registration-app">
+<a href="#section-9.1" class="section-number selfRef">9.1. </a><a href="#name-media-type-registration-app" class="section-name selfRef">Media Type Registration: application/llm-request+json</a>
+        </h3>
+<span class="break"></span><dl class="dlParallel" id="section-9.1-1">
+          <dt id="section-9.1-1.1">Type name:</dt>
+          <dd style="margin-left: 1.5em" id="section-9.1-1.2">
+            <p id="section-9.1-1.2.1">application<a href="#section-9.1-1.2.1" class="pilcrow">¶</a></p>
+</dd>
+          <dd class="break"></dd>
+<dt id="section-9.1-1.3">Subtype name:</dt>
+          <dd style="margin-left: 1.5em" id="section-9.1-1.4">
+            <p id="section-9.1-1.4.1">llm-request+json<a href="#section-9.1-1.4.1" class="pilcrow">¶</a></p>
+</dd>
+          <dd class="break"></dd>
+<dt id="section-9.1-1.5">Required parameters:</dt>
+          <dd style="margin-left: 1.5em" id="section-9.1-1.6">
+            <p id="section-9.1-1.6.1">None<a href="#section-9.1-1.6.1" class="pilcrow">¶</a></p>
+</dd>
+          <dd class="break"></dd>
+<dt id="section-9.1-1.7">Optional parameters:</dt>
+          <dd style="margin-left: 1.5em" id="section-9.1-1.8">
+            <p id="section-9.1-1.8.1">version (default: "1.0")<a href="#section-9.1-1.8.1" class="pilcrow">¶</a></p>
+</dd>
+          <dd class="break"></dd>
+<dt id="section-9.1-1.9">Encoding considerations:</dt>
+          <dd style="margin-left: 1.5em" id="section-9.1-1.10">
+            <p id="section-9.1-1.10.1">8bit (UTF-8 JSON)<a href="#section-9.1-1.10.1" class="pilcrow">¶</a></p>
+</dd>
+          <dd class="break"></dd>
+<dt id="section-9.1-1.11">Intended usage:</dt>
+          <dd style="margin-left: 1.5em" id="section-9.1-1.12">
+            <p id="section-9.1-1.12.1">COMMON<a href="#section-9.1-1.12.1" class="pilcrow">¶</a></p>
+</dd>
+        <dd class="break"></dd>
+</dl>
+</section>
+</div>
+<div id="sse-event-type-registry">
+<section id="section-9.2">
+        <h3 id="name-sse-event-type-registry">
+<a href="#section-9.2" class="section-number selfRef">9.2. </a><a href="#name-sse-event-type-registry" class="section-name selfRef">SSE Event Type Registry</a>
+        </h3>
+<p id="section-9.2-1">This document requests creation of an IANA registry for LLM-Stream SSE event types:<a href="#section-9.2-1" class="pilcrow">¶</a></p>
+<table class="center" id="table-15">
+          <caption><a href="#table-15" class="selfRef">Table 15</a></caption>
+<thead>
+            <tr>
+              <th class="text-left" rowspan="1" colspan="1">Event Type</th>
+              <th class="text-left" rowspan="1" colspan="1">Reference</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">stream.start</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <a href="#stream-start" class="auto internal xref">Section 5.3.1</a>
+</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">content.delta</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <a href="#content-delta" class="auto internal xref">Section 5.3.2</a>
+</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">content.stop</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <a href="#content-stop" class="auto internal xref">Section 5.3.3</a>
+</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">tool.call</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <a href="#tool-call" class="auto internal xref">Section 5.3.4</a>
+</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">usage</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <a href="#usage" class="auto internal xref">Section 5.3.5</a>
+</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">error</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <a href="#error" class="auto internal xref">Section 5.3.6</a>
+</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">stream.end</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <a href="#stream-end" class="auto internal xref">Section 5.3.7</a>
+</td>
+            </tr>
+          </tbody>
+        </table>
+<p id="section-9.2-3">New event types are registered via Specification Required <span>[<a href="#RFC8126" class="cite xref">RFC8126</a>]</span>.<a href="#section-9.2-3" class="pilcrow">¶</a></p>
+</section>
+</div>
+</section>
+</div>
+<div id="sec-combined-references">
+<section id="section-10">
+      <h2 id="name-references">
+<a href="#section-10" class="section-number selfRef">10. </a><a href="#name-references" class="section-name selfRef">References</a>
+      </h2>
+<div id="sec-normative-references">
+<section id="section-10.1">
+        <h3 id="name-normative-references">
+<a href="#section-10.1" class="section-number selfRef">10.1. </a><a href="#name-normative-references" class="section-name selfRef">Normative References</a>
+        </h3>
+<dl class="references">
+<dt id="RFC2119">[RFC2119]</dt>
+        <dd>
+<span class="refAuthor">Bradner, S.</span>, <span class="refTitle">"Key words for use in RFCs to Indicate Requirement Levels"</span>, <span class="seriesInfo">BCP 14</span>, <span class="seriesInfo">RFC 2119</span>, <span class="seriesInfo">DOI 10.17487/RFC2119</span>, <time datetime="1997-03" class="refDate">March 1997</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc2119">https://www.rfc-editor.org/rfc/rfc2119</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC6455">[RFC6455]</dt>
+        <dd>
+<span class="refAuthor">Fette, I.</span> and <span class="refAuthor">A. Melnikov</span>, <span class="refTitle">"The WebSocket Protocol"</span>, <span class="seriesInfo">RFC 6455</span>, <span class="seriesInfo">DOI 10.17487/RFC6455</span>, <time datetime="2011-12" class="refDate">December 2011</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc6455">https://www.rfc-editor.org/rfc/rfc6455</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC8126">[RFC8126]</dt>
+        <dd>
+<span class="refAuthor">Cotton, M.</span>, <span class="refAuthor">Leiba, B.</span>, and <span class="refAuthor">T. Narten</span>, <span class="refTitle">"Guidelines for Writing an IANA Considerations Section in RFCs"</span>, <span class="seriesInfo">BCP 26</span>, <span class="seriesInfo">RFC 8126</span>, <span class="seriesInfo">DOI 10.17487/RFC8126</span>, <time datetime="2017-06" class="refDate">June 2017</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc8126">https://www.rfc-editor.org/rfc/rfc8126</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC8174">[RFC8174]</dt>
+        <dd>
+<span class="refAuthor">Leiba, B.</span>, <span class="refTitle">"Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"</span>, <span class="seriesInfo">BCP 14</span>, <span class="seriesInfo">RFC 8174</span>, <span class="seriesInfo">DOI 10.17487/RFC8174</span>, <time datetime="2017-05" class="refDate">May 2017</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc8174">https://www.rfc-editor.org/rfc/rfc8174</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC8446">[RFC8446]</dt>
+        <dd>
+<span class="refAuthor">Rescorla, E.</span>, <span class="refTitle">"The Transport Layer Security (TLS) Protocol Version 1.3"</span>, <span class="seriesInfo">RFC 8446</span>, <span class="seriesInfo">DOI 10.17487/RFC8446</span>, <time datetime="2018-08" class="refDate">August 2018</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc8446">https://www.rfc-editor.org/rfc/rfc8446</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC9110">[RFC9110]</dt>
+        <dd>
+<span class="refAuthor">Fielding, R., Ed.</span>, <span class="refAuthor">Nottingham, M., Ed.</span>, and <span class="refAuthor">J. Reschke, Ed.</span>, <span class="refTitle">"HTTP Semantics"</span>, <span class="seriesInfo">STD 97</span>, <span class="seriesInfo">RFC 9110</span>, <span class="seriesInfo">DOI 10.17487/RFC9110</span>, <time datetime="2022-06" class="refDate">June 2022</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc9110">https://www.rfc-editor.org/rfc/rfc9110</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC9113">[RFC9113]</dt>
+        <dd>
+<span class="refAuthor">Thomson, M., Ed.</span> and <span class="refAuthor">C. Benfield, Ed.</span>, <span class="refTitle">"HTTP/2"</span>, <span class="seriesInfo">RFC 9113</span>, <span class="seriesInfo">DOI 10.17487/RFC9113</span>, <time datetime="2022-06" class="refDate">June 2022</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc9113">https://www.rfc-editor.org/rfc/rfc9113</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="WHATWG-HTML">[WHATWG-HTML]</dt>
+      <dd>
+<span class="refAuthor">WHATWG</span>, <span class="refTitle">"HTML Living Standard - Server-sent events"</span>, <span>n.d.</span>, <span>&lt;<a href="https://html.spec.whatwg.org/multipage/server-sent-events.html">https://html.spec.whatwg.org/multipage/server-sent-events.html</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+</dl>
+</section>
+</div>
+<div id="sec-informative-references">
+<section id="section-10.2">
+        <h3 id="name-informative-references">
+<a href="#section-10.2" class="section-number selfRef">10.2. </a><a href="#name-informative-references" class="section-name selfRef">Informative References</a>
+        </h3>
+<dl class="references">
+<dt id="Connect">[Connect]</dt>
+        <dd>
+<span class="refAuthor">Buf Technologies</span>, <span class="refTitle">"Connect Protocol Specification"</span>, <span>n.d.</span>, <span>&lt;<a href="https://connectrpc.com/docs/protocol">https://connectrpc.com/docs/protocol</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="gRPC">[gRPC]</dt>
+        <dd>
+<span class="refAuthor">Google</span>, <span class="refTitle">"gRPC over HTTP/2"</span>, <span>n.d.</span>, <span>&lt;<a href="https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md">https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="MCP">[MCP]</dt>
+        <dd>
+<span class="refAuthor">Anthropic / AAIF</span>, <span class="refTitle">"Model Context Protocol Specification"</span>, <span>n.d.</span>, <span>&lt;<a href="https://spec.modelcontextprotocol.io">https://spec.modelcontextprotocol.io</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="SignalR">[SignalR]</dt>
+        <dd>
+<span class="refAuthor">Microsoft</span>, <span class="refTitle">"SignalR Hub Protocol"</span>, <span>n.d.</span>, <span>&lt;<a href="https://github.com/dotnet/aspnetcore/blob/main/src/SignalR/docs/specs/HubProtocol.md">https://github.com/dotnet/aspnetcore/blob/main/src/SignalR/docs/specs/HubProtocol.md</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="W3C-WEBTRANSPORT">[W3C-WEBTRANSPORT]</dt>
+      <dd>
+<span class="refAuthor">W3C</span>, <span class="refTitle">"WebTransport"</span>, <span>n.d.</span>, <span>&lt;<a href="https://www.w3.org/TR/webtransport/">https://www.w3.org/TR/webtransport/</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+</dl>
+</section>
+</div>
+</section>
+</div>
+<div id="json-schema-for-event-envelope">
+<section id="appendix-A">
+      <h2 id="name-json-schema-for-event-envel">
+<a href="#appendix-A" class="section-number selfRef">Appendix A. </a><a href="#name-json-schema-for-event-envel" class="section-name selfRef">JSON Schema for Event Envelope</a>
+      </h2>
+<div class="lang-json sourcecode" id="appendix-A-1">
+<pre>
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ietf:params:llm-stream:event-envelope:1.0",
+  "type": "object",
+  "required": ["v", "seq", "type"],
+  "properties": {
+    "v": {"type": "string", "const": "1.0"},
+    "seq": {"type": "integer", "minimum": 0},
+    "type": {
+      "type": "string",
+      "enum": ["stream.start", "content.delta",
+               "content.stop", "tool.call", "usage",
+               "error", "stream.end"]
+    }
+  },
+  "additionalProperties": true
+}
+</pre><a href="#appendix-A-1" class="pilcrow">¶</a>
+</div>
+</section>
+</div>
+<div id="observed-protocol-landscape-june-2026">
+<section id="appendix-B">
+      <h2 id="name-observed-protocol-landscape">
+<a href="#appendix-B" class="section-number selfRef">Appendix B. </a><a href="#name-observed-protocol-landscape" class="section-name selfRef">Observed Protocol Landscape (June 2026)</a>
+      </h2>
+<table class="center" id="table-16">
+        <caption><a href="#table-16" class="selfRef">Table 16</a></caption>
+<thead>
+          <tr>
+            <th class="text-left" rowspan="1" colspan="1">Provider</th>
+            <th class="text-left" rowspan="1" colspan="1">Transport</th>
+            <th class="text-left" rowspan="1" colspan="1">Framing</th>
+            <th class="text-left" rowspan="1" colspan="1">API Type</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="text-left" rowspan="1" colspan="1">OpenAI</td>
+            <td class="text-left" rowspan="1" colspan="1">HTTP/2 + SSE</td>
+            <td class="text-left" rowspan="1" colspan="1">SSE data: lines</td>
+            <td class="text-left" rowspan="1" colspan="1">Public</td>
+          </tr>
+          <tr>
+            <td class="text-left" rowspan="1" colspan="1">Anthropic</td>
+            <td class="text-left" rowspan="1" colspan="1">HTTP/2 + SSE</td>
+            <td class="text-left" rowspan="1" colspan="1">SSE event: + data:</td>
+            <td class="text-left" rowspan="1" colspan="1">Public</td>
+          </tr>
+          <tr>
+            <td class="text-left" rowspan="1" colspan="1">Google Gemini</td>
+            <td class="text-left" rowspan="1" colspan="1">HTTP/2 + SSE</td>
+            <td class="text-left" rowspan="1" colspan="1">SSE data: lines</td>
+            <td class="text-left" rowspan="1" colspan="1">Public</td>
+          </tr>
+          <tr>
+            <td class="text-left" rowspan="1" colspan="1">Microsoft/Azure</td>
+            <td class="text-left" rowspan="1" colspan="1">WebSocket</td>
+            <td class="text-left" rowspan="1" colspan="1">SignalR 0x1E</td>
+            <td class="text-left" rowspan="1" colspan="1">Proprietary</td>
+          </tr>
+          <tr>
+            <td class="text-left" rowspan="1" colspan="1">Cursor/Windsurf</td>
+            <td class="text-left" rowspan="1" colspan="1">HTTP/2</td>
+            <td class="text-left" rowspan="1" colspan="1">Connect binary</td>
+            <td class="text-left" rowspan="1" colspan="1">Proprietary</td>
+          </tr>
+        </tbody>
+      </table>
+</section>
+</div>
+<div id="acknowledgments">
+<section id="appendix-C">
+      <h2 id="name-acknowledgments">
+<a href="#name-acknowledgments" class="section-name selfRef">Acknowledgments</a>
+      </h2>
+<p id="appendix-C-1">TODO acknowledge.<a href="#appendix-C-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="authors-addresses">
+<section id="appendix-D">
+      <h2 id="name-authors-addresses">
+<a href="#name-authors-addresses" class="section-name selfRef">Authors' Addresses</a>
+      </h2>
+<address class="vcard">
+        <div dir="auto" class="left"><span class="fn nameRole">Yaroslav Rosomakho</span></div>
+<div dir="auto" class="left"><span class="org">Zscaler</span></div>
+<div class="email">
+<span>Email:</span>
+<a href="mailto:yrosomakho@zscaler.com" class="email">yrosomakho@zscaler.com</a>
+</div>
+</address>
+<address class="vcard">
+        <div dir="auto" class="left"><span class="fn nameRole">Santosh Pallagatti</span></div>
+<div dir="auto" class="left"><span class="org">Zscaler</span></div>
+<div class="email">
+<span>Email:</span>
+<a href="mailto:santosh.pallagatti@gmail.com" class="email">santosh.pallagatti@gmail.com</a>
+</div>
+</address>
+</section>
+</div>
+<script>const toc = document.getElementById("toc");
+toc.querySelector("h2").addEventListener("click", e => {
+  toc.classList.toggle("active");
+});
+toc.querySelector("nav").addEventListener("click", e => {
+  toc.classList.remove("active");
+});
+</script>
+</body>
+</html>
