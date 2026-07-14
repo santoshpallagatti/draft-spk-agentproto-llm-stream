@@ -41,8 +41,15 @@ author:
     fullname: Santosh Pallagatti
     organization: "Zscaler"
     email: "santosh.pallagatti@gmail.com"
-
+    
 normative:
+  RFC2119:
+  RFC8174:
+  RFC9110:
+  RFC9113:
+  RFC8446:
+  RFC6455:
+  RFC8126:
   WHATWG-HTML:
     title: "HTML Living Standard - Server-sent events"
     target: https://html.spec.whatwg.org/multipage/server-sent-events.html
@@ -96,9 +103,9 @@ The scope of this document is strictly Client/Application to LLM inference endpo
 
 The AI inference ecosystem is experiencing protocol fragmentation reminiscent of the early web. Every major vendor has independently defined its own wire format for the same fundamental operation: streaming generated tokens from a model to a client. Each vendor uses a different combination of application-layer framing and JSON payload schema:
 
-- OpenAI streams SSE with JSON payloads using the path choices[0].delta.content for generated text.
+- OpenAI streams SSE with JSON payloads using the path `choices[0].delta.content` for generated text.
 - Anthropic streams SSE with typed event blocks, placing generated text at delta.text inside content_block_delta events.
-- Google Gemini streams SSE with JSON payloads using candidates[0].content.parts[0].text.
+- Google Gemini streams SSE with JSON payloads using `candidates[0].content.parts[0].text`.
 - Microsoft Azure / Copilot uses WebSocket with the SignalR Hub Protocol's {{SignalR}} proprietary 0x1E record-separator framing.
 - Cursor and Windsurf (AI coding assistants) use the Connect protocol {{Connect}} (application/connect+proto) with a 5-byte binary envelope and Protobuf-encoded payloads over HTTP/2.
 
