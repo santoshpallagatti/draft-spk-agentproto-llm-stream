@@ -1,15 +1,4 @@
 ---
-###
-# Internet-Draft for LLM Inference Streaming Wire Format
-#
-# Draft name: draft-spk-agentproto-llm-stream
-# Target: Agent Communication Protocol (agentproto) Working Group
-#
-# Authors: Yaroslav Rosomakho, Santosh Pallagatti
-#
-# This template uses kramdown-rfc: https://github.com/cabo/kramdown-rfc
-#
-###
 title: "A Standard Wire Format for Large Language Model Inference Streaming"
 abbrev: "LLM-Stream"
 category: std
