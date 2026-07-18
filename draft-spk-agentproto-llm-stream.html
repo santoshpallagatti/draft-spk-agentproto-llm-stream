@@ -29,7 +29,7 @@
     Jinja2 3.1.6
     lxml 6.1.1
     natsort 8.4.0
-    platformdirs 4.10.0
+    platformdirs 4.10.1
     pycountry 24.6.1
     PyYAML 6.0.3
     requests 2.33.1
@@ -1056,7 +1056,7 @@ svg {
 </tr></thead>
 <tfoot><tr>
 <td class="left">Rosomakho &amp; Pallagatti</td>
-<td class="center">Expires 16 January 2027</td>
+<td class="center">Expires 19 January 2027</td>
 <td class="right">[Page]</td>
 </tr></tfoot>
 </table>
@@ -1069,12 +1069,12 @@ svg {
 <dd class="internet-draft">draft-spk-agentproto-llm-stream-latest</dd>
 <dt class="label-published">Published:</dt>
 <dd class="published">
-<time datetime="2026-07-15" class="published">15 July 2026</time>
+<time datetime="2026-07-18" class="published">18 July 2026</time>
     </dd>
 <dt class="label-intended-status">Intended Status:</dt>
 <dd class="intended-status">Standards Track</dd>
 <dt class="label-expires">Expires:</dt>
-<dd class="expires"><time datetime="2027-01-16">16 January 2027</time></dd>
+<dd class="expires"><time datetime="2027-01-19">19 January 2027</time></dd>
 <dt class="label-authors">Authors:</dt>
 <dd class="authors">
 <div class="author">
@@ -1126,7 +1126,7 @@ svg {
         time. It is inappropriate to use Internet-Drafts as reference
         material or to cite them other than as "work in progress."<a href="#section-boilerplate.1-3" class="pilcrow">¶</a></p>
 <p id="section-boilerplate.1-4">
-        This Internet-Draft will expire on 16 January 2027.<a href="#section-boilerplate.1-4" class="pilcrow">¶</a></p>
+        This Internet-Draft will expire on 19 January 2027.<a href="#section-boilerplate.1-4" class="pilcrow">¶</a></p>
 </section>
 </div>
 <div id="copyright">
@@ -1410,29 +1410,14 @@ svg {
         <h3 id="name-use-cases">
 <a href="#section-1.2" class="section-number selfRef">1.2. </a><a href="#name-use-cases" class="section-name selfRef">Use Cases</a>
         </h3>
-<p id="section-1.2-1">The absence of a standard wire format for AI inference streaming
-creates unnecessary cost and complexity across the AI ecosystem. The
-following use cases illustrate the breadth of the problem.<a href="#section-1.2-1" class="pilcrow">¶</a></p>
+<p id="section-1.2-1">The absence of a standard wire format for AI inference streaming creates unnecessary cost and complexity across the AI ecosystem. The following use cases illustrate the breadth of the problem.<a href="#section-1.2-1" class="pilcrow">¶</a></p>
 <div id="middleware-and-framework-integration">
 <section id="section-1.2.1">
           <h4 id="name-middleware-and-framework-in">
 <a href="#section-1.2.1" class="section-number selfRef">1.2.1. </a><a href="#name-middleware-and-framework-in" class="section-name selfRef">Middleware and Framework Integration</a>
           </h4>
-<p id="section-1.2.1-1">A significant middleware ecosystem exists between LLM inference
-providers and application developers, including orchestration
-frameworks (LangChain, LlamaIndex, Spring AI, Semantic Kernel),
-SDK abstraction layers (Vercel AI SDK, LiteLLM), and AI gateways
-(Portkey, Cloudflare AI Gateway). Each of these components maintains
-provider-specific streaming response parsers for every supported
-LLM vendor.<a href="#section-1.2.1-1" class="pilcrow">¶</a></p>
-<p id="section-1.2.1-2">This parsing logic is stateful and non-trivial: it includes
-byte-level SSE reassembly, vendor-specific JSON path extraction,
-event type classification, stream lifecycle management, and
-reconnection handling. A standard payload format would allow these
-components to implement streaming response parsing once, independent
-of the upstream provider. Provider-specific configuration
-(authentication, endpoint URLs, model identifiers) would remain,
-but the streaming transport layer would be shared.<a href="#section-1.2.1-2" class="pilcrow">¶</a></p>
+<p id="section-1.2.1-1">A significant middleware ecosystem exists between LLM inference providers and application developers, including orchestration frameworks (LangChain, LlamaIndex, Spring AI, Semantic Kernel), SDK abstraction layers (Vercel AI SDK, LiteLLM), and AI gateways (Portkey, Cloudflare AI Gateway). Each of these components maintains provider-specific streaming response parsers for every supported LLM vendor.<a href="#section-1.2.1-1" class="pilcrow">¶</a></p>
+<p id="section-1.2.1-2">This parsing logic is stateful and non-trivial: it includes byte-level SSE reassembly, vendor-specific JSON path extraction, event type classification, stream lifecycle management, and reconnection handling. A standard payload format would allow these components to implement streaming response parsing once, independent of the upstream provider. Provider-specific configuration (authentication, endpoint URLs, model identifiers) would remain, but the streaming transport layer would be shared.<a href="#section-1.2.1-2" class="pilcrow">¶</a></p>
 </section>
 </div>
 <div id="new-provider-integration">
@@ -1440,15 +1425,8 @@ but the streaming transport layer would be shared.<a href="#section-1.2.1-2" cla
           <h4 id="name-new-provider-integration">
 <a href="#section-1.2.2" class="section-number selfRef">1.2.2. </a><a href="#name-new-provider-integration" class="section-name selfRef">New Provider Integration</a>
           </h4>
-<p id="section-1.2.2-1">When a new inference provider enters the market, middleware
-frameworks must implement a provider-specific streaming integration
-before that provider's models are accessible to framework-dependent
-developers. Providers with large user bases are typically integrated
-quickly. Providers with smaller user bases may experience delays of
-weeks or months.<a href="#section-1.2.2-1" class="pilcrow">¶</a></p>
-<p id="section-1.2.2-2">A standard payload format would allow any conforming provider to be
-consumed by existing middleware frameworks without additional
-integration effort on either side for the streaming layer.<a href="#section-1.2.2-2" class="pilcrow">¶</a></p>
+<p id="section-1.2.2-1">When a new inference provider enters the market, middleware frameworks must implement a provider-specific streaming integration before that provider's models are accessible to framework-dependent developers. Providers with large user bases are typically integrated quickly. Providers with smaller user bases may experience delays of weeks or months.<a href="#section-1.2.2-1" class="pilcrow">¶</a></p>
+<p id="section-1.2.2-2">A standard payload format would allow any conforming provider to be consumed by existing middleware frameworks without additional integration effort on either side for the streaming layer.<a href="#section-1.2.2-2" class="pilcrow">¶</a></p>
 </section>
 </div>
 <div id="format-proliferation-through-cloud-hosting">
@@ -1456,13 +1434,8 @@ integration effort on either side for the streaming layer.<a href="#section-1.2.
           <h4 id="name-format-proliferation-throug">
 <a href="#section-1.2.3" class="section-number selfRef">1.2.3. </a><a href="#name-format-proliferation-throug" class="section-name selfRef">Format Proliferation Through Cloud Hosting</a>
           </h4>
-<p id="section-1.2.3-1">AWS Bedrock, Azure AI Studio, and Google Vertex AI each host
-third-party models and expose them through proprietary streaming
-formats distinct from the original provider's public API.<a href="#section-1.2.3-1" class="pilcrow">¶</a></p>
-<p id="section-1.2.3-2">A standard payload specification would provide a common format for
-both direct vendor APIs and cloud hosting platforms to converge on,
-reducing rather than multiplying the number of streaming formats in
-the ecosystem.<a href="#section-1.2.3-2" class="pilcrow">¶</a></p>
+<p id="section-1.2.3-1">AWS Bedrock, Azure AI Studio, and Google Vertex AI each host third-party models and expose them through proprietary streaming formats distinct from the original provider's public API.<a href="#section-1.2.3-1" class="pilcrow">¶</a></p>
+<p id="section-1.2.3-2">A standard payload specification would provide a common format for both direct vendor APIs and cloud hosting platforms to converge on, reducing rather than multiplying the number of streaming formats in the ecosystem.<a href="#section-1.2.3-2" class="pilcrow">¶</a></p>
 </section>
 </div>
 <div id="content-auditing-and-compliance">
@@ -1470,16 +1443,8 @@ the ecosystem.<a href="#section-1.2.3-2" class="pilcrow">¶</a></p>
           <h4 id="name-content-auditing-and-compli">
 <a href="#section-1.2.4" class="section-number selfRef">1.2.4. </a><a href="#name-content-auditing-and-compli" class="section-name selfRef">Content Auditing and Compliance</a>
           </h4>
-<p id="section-1.2.4-1">Regulatory frameworks such as the EU AI Act impose requirements on
-enterprises to audit AI-generated content: what was generated, which
-model produced it, and how many tokens were consumed. These data
-points are carried entirely within the streaming payload: generated
-text in content delta events, model identification in stream
-initiation events, and token counts in usage events.<a href="#section-1.2.4-1" class="pilcrow">¶</a></p>
-<p id="section-1.2.4-2">A standard payload format enables compliance tooling to extract this
-information from any conforming provider using a single parser,
-independent of provider-specific authentication or billing
-interfaces.<a href="#section-1.2.4-2" class="pilcrow">¶</a></p>
+<p id="section-1.2.4-1">The EU AI Act distinguishes between providers (who develop AI systems) and deployers (who use AI systems in their business). Deployers of high-risk AI systems are required to keep automatically generated logs for at least six months, monitor the system's operation, ensure human oversight, and report serious incidents. Deployers using multiple AI providers must meet these obligations across all of them.<a href="#section-1.2.4-1" class="pilcrow">¶</a></p>
+<p id="section-1.2.4-2">The data required for deployer compliance, specifically what was generated, which model produced it, and how many tokens were consumed, is carried entirely within the streaming payload: generated text in content.delta events, model identification in stream.start events, and token counts in usage events. A standard payload format enables deployers to build a single logging and audit pipeline that extracts this information from any conforming provider, rather than maintaining provider-specific extraction logic for each LLM vendor in use.<a href="#section-1.2.4-2" class="pilcrow">¶</a></p>
 </section>
 </div>
 <div id="observability-in-regulated-environments">
@@ -1487,18 +1452,8 @@ interfaces.<a href="#section-1.2.4-2" class="pilcrow">¶</a></p>
           <h4 id="name-observability-in-regulated-">
 <a href="#section-1.2.5" class="section-number selfRef">1.2.5. </a><a href="#name-observability-in-regulated-" class="section-name selfRef">Observability in Regulated Environments</a>
           </h4>
-<p id="section-1.2.5-1">Unified observability across LLM providers is available today
-through third-party gateways that route inference traffic through
-their infrastructure. For organizations in regulated sectors
-(healthcare, finance, government), routing prompts and completions
-through a third-party service may conflict with data sovereignty
-and compliance requirements.<a href="#section-1.2.5-1" class="pilcrow">¶</a></p>
-<p id="section-1.2.5-2">Standard event types and sequence numbers would enable observability
-directly within the organization's own infrastructure: existing
-application performance monitoring tools could natively parse LLM
-streaming events based on a documented specification, without
-requiring vendor-specific plugins or third-party services in the
-data path.<a href="#section-1.2.5-2" class="pilcrow">¶</a></p>
+<p id="section-1.2.5-1">Unified observability across LLM providers is available today through third-party gateways that route inference traffic through their infrastructure. For organizations in regulated sectors (healthcare, finance, government), routing prompts and completions through a third-party service may conflict with data sovereignty and compliance requirements.<a href="#section-1.2.5-1" class="pilcrow">¶</a></p>
+<p id="section-1.2.5-2">Standard event types and sequence numbers would enable observability directly within the organization's own infrastructure: existing application performance monitoring tools could natively parse LLM streaming events based on a documented specification, without requiring vendor-specific plugins or third-party services in the data path.<a href="#section-1.2.5-2" class="pilcrow">¶</a></p>
 </section>
 </div>
 <div id="browser-based-consumption">
@@ -1506,13 +1461,7 @@ data path.<a href="#section-1.2.5-2" class="pilcrow">¶</a></p>
           <h4 id="name-browser-based-consumption">
 <a href="#section-1.2.6" class="section-number selfRef">1.2.6. </a><a href="#name-browser-based-consumption" class="section-name selfRef">Browser-Based Consumption</a>
           </h4>
-<p id="section-1.2.6-1">The browser EventSource API provides native support for SSE
-transport but has no awareness of the JSON payload structure. Each
-browser-based AI application currently implements its own response
-parsing logic per provider. A standard payload schema would enable
-a single client-side library to parse streaming responses from any
-conforming provider. Authentication is handled in HTTP headers prior
-to stream establishment and is independent of payload parsing.<a href="#section-1.2.6-1" class="pilcrow">¶</a></p>
+<p id="section-1.2.6-1">The browser EventSource API provides native support for SSE transport but has no awareness of the JSON payload structure. Each browser-based AI application currently implements its own response parsing logic per provider. A standard payload schema would enable a single client-side library to parse streaming responses from any conforming provider. Authentication is handled in HTTP headers prior to stream establishment and is independent of payload parsing.<a href="#section-1.2.6-1" class="pilcrow">¶</a></p>
 </section>
 </div>
 <div id="protocol-stack-completeness">
@@ -1520,16 +1469,7 @@ to stream establishment and is independent of payload parsing.<a href="#section-
           <h4 id="name-protocol-stack-completeness">
 <a href="#section-1.2.7" class="section-number selfRef">1.2.7. </a><a href="#name-protocol-stack-completeness" class="section-name selfRef">Protocol Stack Completeness</a>
           </h4>
-<p id="section-1.2.7-1">The Model Context Protocol (MCP) standardizes agent-to-tool
-interaction under the AI Alliance and Linux Foundation.
-Agent-to-agent communication protocols are emerging as separate
-standardization efforts. The inference streaming layer, which
-carries generated content from model endpoints to client
-applications, sits between the application and these agent
-interaction protocols. Without a standard for inference streaming
-payloads, the protocol architecture contains standardized layers
-above and below connected by a proprietary, vendor-specific layer
-in the middle. This specification addresses that gap.<a href="#section-1.2.7-1" class="pilcrow">¶</a></p>
+<p id="section-1.2.7-1">The Model Context Protocol (MCP) standardizes agent-to-tool interaction under the AI Alliance and Linux Foundation. Agent-to-agent communication protocols are emerging as separate standardization efforts. The inference streaming layer, which carries generated content from model endpoints to client applications, sits between the application and these agent interaction protocols. Without a standard for inference streaming payloads, the protocol architecture contains standardized layers above and below connected by a proprietary, vendor-specific layer in the middle. This specification addresses that gap.<a href="#section-1.2.7-1" class="pilcrow">¶</a></p>
 </section>
 </div>
 <div id="http-intermediaries">
@@ -1537,13 +1477,7 @@ in the middle. This specification addresses that gap.<a href="#section-1.2.7-1" 
           <h4 id="name-http-intermediaries">
 <a href="#section-1.2.8" class="section-number selfRef">1.2.8. </a><a href="#name-http-intermediaries" class="section-name selfRef">HTTP Intermediaries</a>
           </h4>
-<p id="section-1.2.8-1">Forward proxies, reverse proxies, and security appliances that
-inspect AI inference traffic for content policy enforcement or audit
-logging must currently extract generated text from vendor-specific
-JSON structures at different paths per provider. A standard payload
-format with a canonical field for generated text (delta.text)
-enables these intermediaries to implement a single parser for
-content extraction across all conforming providers.<a href="#section-1.2.8-1" class="pilcrow">¶</a></p>
+<p id="section-1.2.8-1">Forward proxies, reverse proxies, and security appliances that inspect AI inference traffic for content policy enforcement or audit logging must currently extract generated text from vendor-specific JSON structures at different paths per provider. A standard payload format with a canonical field for generated text (delta.text) enables these intermediaries to implement a single parser for content extraction across all conforming providers.<a href="#section-1.2.8-1" class="pilcrow">¶</a></p>
 </section>
 </div>
 </section>

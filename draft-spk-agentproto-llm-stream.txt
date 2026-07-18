@@ -5,7 +5,7 @@
 Agent Communication Protocols                               Y. Rosomakho
 Internet-Draft                                             S. Pallagatti
 Intended status: Standards Track                                 Zscaler
-Expires: 16 January 2027                                    15 July 2026
+Expires: 19 January 2027                                    18 July 2026
 
 
   A Standard Wire Format for Large Language Model Inference Streaming
@@ -72,7 +72,7 @@ Status of This Memo
    time.  It is inappropriate to use Internet-Drafts as reference
    material or to cite them other than as "work in progress."
 
-   This Internet-Draft will expire on 16 January 2027.
+   This Internet-Draft will expire on 19 January 2027.
 
 Copyright Notice
 
@@ -250,17 +250,23 @@ Table of Contents
 
 1.2.4.  Content Auditing and Compliance
 
-   Regulatory frameworks such as the EU AI Act impose requirements on
-   enterprises to audit AI-generated content: what was generated, which
-   model produced it, and how many tokens were consumed.  These data
-   points are carried entirely within the streaming payload: generated
-   text in content delta events, model identification in stream
-   initiation events, and token counts in usage events.
+   The EU AI Act distinguishes between providers (who develop AI
+   systems) and deployers (who use AI systems in their business).
+   Deployers of high-risk AI systems are required to keep automatically
+   generated logs for at least six months, monitor the system's
+   operation, ensure human oversight, and report serious incidents.
+   Deployers using multiple AI providers must meet these obligations
+   across all of them.
 
-   A standard payload format enables compliance tooling to extract this
-   information from any conforming provider using a single parser,
-   independent of provider-specific authentication or billing
-   interfaces.
+   The data required for deployer compliance, specifically what was
+   generated, which model produced it, and how many tokens were
+   consumed, is carried entirely within the streaming payload: generated
+   text in content.delta events, model identification in stream.start
+   events, and token counts in usage events.  A standard payload format
+   enables deployers to build a single logging and audit pipeline that
+   extracts this information from any conforming provider, rather than
+   maintaining provider-specific extraction logic for each LLM vendor in
+   use.
 
 1.2.5.  Observability in Regulated Environments
 
