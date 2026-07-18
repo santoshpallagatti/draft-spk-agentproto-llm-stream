@@ -106,115 +106,49 @@ SSE is used correctly per the W3C specification by most vendors, but nothing in 
 
 ## Use Cases
 
-The absence of a standard wire format for AI inference streaming
-creates unnecessary cost and complexity across the AI ecosystem. The
-following use cases illustrate the breadth of the problem.
+The absence of a standard wire format for AI inference streaming creates unnecessary cost and complexity across the AI ecosystem. The following use cases illustrate the breadth of the problem.
 
 ### Middleware and Framework Integration
 
-A significant middleware ecosystem exists between LLM inference
-providers and application developers, including orchestration
-frameworks (LangChain, LlamaIndex, Spring AI, Semantic Kernel),
-SDK abstraction layers (Vercel AI SDK, LiteLLM), and AI gateways
-(Portkey, Cloudflare AI Gateway). Each of these components maintains
-provider-specific streaming response parsers for every supported
-LLM vendor.
+A significant middleware ecosystem exists between LLM inference providers and application developers, including orchestration frameworks (LangChain, LlamaIndex, Spring AI, Semantic Kernel), SDK abstraction layers (Vercel AI SDK, LiteLLM), and AI gateways (Portkey, Cloudflare AI Gateway). Each of these components maintains provider-specific streaming response parsers for every supported LLM vendor.
 
-This parsing logic is stateful and non-trivial: it includes
-byte-level SSE reassembly, vendor-specific JSON path extraction,
-event type classification, stream lifecycle management, and
-reconnection handling. A standard payload format would allow these
-components to implement streaming response parsing once, independent
-of the upstream provider. Provider-specific configuration
-(authentication, endpoint URLs, model identifiers) would remain,
-but the streaming transport layer would be shared.
+This parsing logic is stateful and non-trivial: it includes byte-level SSE reassembly, vendor-specific JSON path extraction, event type classification, stream lifecycle management, and reconnection handling. A standard payload format would allow these components to implement streaming response parsing once, independent of the upstream provider. Provider-specific configuration (authentication, endpoint URLs, model identifiers) would remain, but the streaming transport layer would be shared.
 
 ### New Provider Integration
 
-When a new inference provider enters the market, middleware
-frameworks must implement a provider-specific streaming integration
-before that provider's models are accessible to framework-dependent
-developers. Providers with large user bases are typically integrated
-quickly. Providers with smaller user bases may experience delays of
-weeks or months.
+When a new inference provider enters the market, middleware frameworks must implement a provider-specific streaming integration before that provider's models are accessible to framework-dependent developers. Providers with large user bases are typically integrated quickly. Providers with smaller user bases may experience delays of weeks or months.
 
-A standard payload format would allow any conforming provider to be
-consumed by existing middleware frameworks without additional
-integration effort on either side for the streaming layer.
+A standard payload format would allow any conforming provider to be consumed by existing middleware frameworks without additional integration effort on either side for the streaming layer.
 
 ### Format Proliferation Through Cloud Hosting
 
-AWS Bedrock, Azure AI Studio, and Google Vertex AI each host
-third-party models and expose them through proprietary streaming
-formats distinct from the original provider's public API.
+AWS Bedrock, Azure AI Studio, and Google Vertex AI each host third-party models and expose them through proprietary streaming formats distinct from the original provider's public API.
 
-A standard payload specification would provide a common format for
-both direct vendor APIs and cloud hosting platforms to converge on,
-reducing rather than multiplying the number of streaming formats in
-the ecosystem.
+A standard payload specification would provide a common format for both direct vendor APIs and cloud hosting platforms to converge on, reducing rather than multiplying the number of streaming formats in the ecosystem.
 
 ### Content Auditing and Compliance
 
-Regulatory frameworks such as the EU AI Act impose requirements on
-enterprises to audit AI-generated content: what was generated, which
-model produced it, and how many tokens were consumed. These data
-points are carried entirely within the streaming payload: generated
-text in content delta events, model identification in stream
-initiation events, and token counts in usage events.
+The EU AI Act distinguishes between providers (who develop AI systems) and deployers (who use AI systems in their business). Deployers of high-risk AI systems are required to keep automatically generated logs for at least six months, monitor the system's operation, ensure human oversight, and report serious incidents. Deployers using multiple AI providers must meet these obligations across all of them.
 
-A standard payload format enables compliance tooling to extract this
-information from any conforming provider using a single parser,
-independent of provider-specific authentication or billing
-interfaces.
+The data required for deployer compliance, specifically what was generated, which model produced it, and how many tokens were consumed, is carried entirely within the streaming payload: generated text in content.delta events, model identification in stream.start events, and token counts in usage events. A standard payload format enables deployers to build a single logging and audit pipeline that extracts this information from any conforming provider, rather than maintaining provider-specific extraction logic for each LLM vendor in use.
 
 ### Observability in Regulated Environments
 
-Unified observability across LLM providers is available today
-through third-party gateways that route inference traffic through
-their infrastructure. For organizations in regulated sectors
-(healthcare, finance, government), routing prompts and completions
-through a third-party service may conflict with data sovereignty
-and compliance requirements.
+Unified observability across LLM providers is available today through third-party gateways that route inference traffic through their infrastructure. For organizations in regulated sectors (healthcare, finance, government), routing prompts and completions through a third-party service may conflict with data sovereignty and compliance requirements.
 
-Standard event types and sequence numbers would enable observability
-directly within the organization's own infrastructure: existing
-application performance monitoring tools could natively parse LLM
-streaming events based on a documented specification, without
-requiring vendor-specific plugins or third-party services in the
-data path.
+Standard event types and sequence numbers would enable observability directly within the organization's own infrastructure: existing application performance monitoring tools could natively parse LLM streaming events based on a documented specification, without requiring vendor-specific plugins or third-party services in the data path.
 
 ### Browser-Based Consumption
 
-The browser EventSource API provides native support for SSE
-transport but has no awareness of the JSON payload structure. Each
-browser-based AI application currently implements its own response
-parsing logic per provider. A standard payload schema would enable
-a single client-side library to parse streaming responses from any
-conforming provider. Authentication is handled in HTTP headers prior
-to stream establishment and is independent of payload parsing.
+The browser EventSource API provides native support for SSE transport but has no awareness of the JSON payload structure. Each browser-based AI application currently implements its own response parsing logic per provider. A standard payload schema would enable a single client-side library to parse streaming responses from any conforming provider. Authentication is handled in HTTP headers prior to stream establishment and is independent of payload parsing.
 
 ### Protocol Stack Completeness
 
-The Model Context Protocol (MCP) standardizes agent-to-tool
-interaction under the AI Alliance and Linux Foundation.
-Agent-to-agent communication protocols are emerging as separate
-standardization efforts. The inference streaming layer, which
-carries generated content from model endpoints to client
-applications, sits between the application and these agent
-interaction protocols. Without a standard for inference streaming
-payloads, the protocol architecture contains standardized layers
-above and below connected by a proprietary, vendor-specific layer
-in the middle. This specification addresses that gap.
+The Model Context Protocol (MCP) standardizes agent-to-tool interaction under the AI Alliance and Linux Foundation. Agent-to-agent communication protocols are emerging as separate standardization efforts. The inference streaming layer, which carries generated content from model endpoints to client applications, sits between the application and these agent interaction protocols. Without a standard for inference streaming payloads, the protocol architecture contains standardized layers above and below connected by a proprietary, vendor-specific layer in the middle. This specification addresses that gap.
 
 ### HTTP Intermediaries
 
-Forward proxies, reverse proxies, and security appliances that
-inspect AI inference traffic for content policy enforcement or audit
-logging must currently extract generated text from vendor-specific
-JSON structures at different paths per provider. A standard payload
-format with a canonical field for generated text (delta.text)
-enables these intermediaries to implement a single parser for
-content extraction across all conforming providers.
+Forward proxies, reverse proxies, and security appliances that inspect AI inference traffic for content policy enforcement or audit logging must currently extract generated text from vendor-specific JSON structures at different paths per provider. A standard payload format with a canonical field for generated text (delta.text) enables these intermediaries to implement a single parser for content extraction across all conforming providers.
 
 ## Scope
 
