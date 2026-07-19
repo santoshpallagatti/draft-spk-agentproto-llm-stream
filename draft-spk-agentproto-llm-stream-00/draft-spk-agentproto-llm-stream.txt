@@ -1,0 +1,1339 @@
+
+
+
+
+Agent Communication Protocols                               Y. Rosomakho
+Internet-Draft                                             S. Pallagatti
+Intended status: Standards Track                                 Zscaler
+Expires: 20 January 2027                                    19 July 2026
+
+
+  A Standard Wire Format for Large Language Model Inference Streaming
+                 draft-spk-agentproto-llm-stream-latest
+
+Abstract
+
+   Large Language Model (LLM) inference endpoints stream response tokens
+   to clients using a fragmented set of vendor-specific application-
+   layer protocols layered on top of standardized transports (HTTP/2,
+   HTTP/1.1, WebSocket, Server-Sent Events).  While these transports
+   carry IETF or W3C standardization, the JSON payload schemas, event
+   taxonomies, and framing conventions used within them are entirely
+   vendor-defined, with no RFCs or common specifications governing them.
+
+   This fragmentation imposes costs across the AI ecosystem.  Middleware
+   frameworks and orchestration platforms (LangChain, LiteLLM, Vercel AI
+   SDK, Portkey, Cloudflare AI Gateway) must maintain vendor-specific
+   streaming parsers for every supported provider.  Cloud hosting
+   platforms (AWS Bedrock, Azure AI Studio, Google Vertex AI) have each
+   introduced additional proprietary streaming formats.  Compliance and
+   observability tooling must be rebuilt per provider.  And new
+   inference providers cannot reach framework-dependent developers
+   without custom integration work.
+
+   This document defines a standard wire format for LLM inference
+   streaming over Server-Sent Events (SSE) on HTTP.  It specifies a
+   request envelope media type (application/llm-request+json), a
+   response event taxonomy, and a JSON event envelope schema that enable
+   middleware, orchestration platforms, compliance tooling, and HTTP
+   intermediaries to handle AI inference traffic from any conforming
+   provider using a single protocol contract.  SSE transport remains
+   unchanged; only the JSON payload inside it is standardized.
+
+   The scope of this document is strictly Client/Application to LLM
+   inference endpoint streaming.  Agent-to-tool interaction (e.g., MCP)
+   and agent-to-agent communication are out of scope.
+
+About This Document
+
+   This note is to be removed before publishing as an RFC.
+
+   The latest revision of this draft can be found at
+   https://santoshpallagatti.github.io/draft-spk-agentproto-llm-stream/
+   draft-spk-agentproto-llm-stream.html.  Status information for this
+   document may be found at https://datatracker.ietf.org/doc/draft-spk-
+   agentproto-llm-stream/.
+
+   Source for this draft and an issue tracker can be found at
+   https://github.com/santoshpallagatti/draft-spk-agentproto-llm-stream.
+
+Status of This Memo
+
+   This Internet-Draft is submitted in full conformance with the
+   provisions of BCP 78 and BCP 79.
+
+   Internet-Drafts are working documents of the Internet Engineering
+   Task Force (IETF).  Note that other groups may also distribute
+   working documents as Internet-Drafts.  The list of current Internet-
+   Drafts is at https://datatracker.ietf.org/drafts/current/.
+
+   Internet-Drafts are draft documents valid for a maximum of six months
+   and may be updated, replaced, or obsoleted by other documents at any
+   time.  It is inappropriate to use Internet-Drafts as reference
+   material or to cite them other than as "work in progress."
+
+   This Internet-Draft will expire on 20 January 2027.
+
+Copyright Notice
+
+   Copyright (c) 2026 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents (https://trustee.ietf.org/
+   license-info) in effect on the date of publication of this document.
+   Please review these documents carefully, as they describe your rights
+   and restrictions with respect to this document.  Code Components
+   extracted from this document must include Revised BSD License text as
+   described in Section 4.e of the Trust Legal Provisions and are
+   provided without warranty as described in the Revised BSD License.
+
+Table of Contents
+
+   1.  Introduction
+     1.1.  Problem Statement
+     1.2.  Use Cases
+       1.2.1.  Middleware and Framework Integration
+       1.2.2.  New Provider Integration
+       1.2.3.  Format Proliferation Through Cloud Hosting
+       1.2.4.  Content Auditing and Compliance
+       1.2.5.  Observability in Regulated Environments
+       1.2.6.  Browser-Based Consumption
+       1.2.7.  Protocol Stack Completeness
+       1.2.8.  HTTP Intermediaries
+     1.3.  Scope
+     1.4.  Design Rationale
+   2.  Conventions and Definitions
+   3.  Transport Binding
+   4.  Media Types and Request Format
+     4.1.  Request Media Type
+     4.2.  Request Envelope
+     4.3.  Messages (Conversation History)
+       4.3.1.  The Content Field
+     4.4.  Tools (Function Declarations)
+     4.5.  Generation Parameters
+     4.6.  Request Metadata
+     4.7.  Vendor Extensions
+     4.8.  Tool Interaction Model
+     4.9.  Response Media Type
+   5.  Response Streaming Format
+     5.1.  SSE Event Framing
+     5.2.  Event Envelope
+       5.2.1.  Sequence Numbers
+     5.3.  Event Types
+       5.3.1.  stream.start
+       5.3.2.  content.delta
+       5.3.3.  content.stop
+       5.3.4.  tool.call
+       5.3.5.  usage
+       5.3.6.  error
+       5.3.7.  stream.end
+     5.4.  Stream Lifecycle
+     5.5.  Complete Example
+   6.  Framing Design Trade-off
+     6.1.  SSE Text-Based Framing (This Specification)
+     6.2.  Length-Prefixed Binary Framing (Alternative)
+     6.3.  Rationale for SSE
+   7.  Backward Compatibility
+     7.1.  API Gateway Translation
+     7.2.  Content-Type Negotiation
+     7.3.  Dual-Format Endpoints
+   8.  Security Considerations
+     8.1.  Prompt Confidentiality
+     8.2.  Tool-Call Abuse
+     8.3.  Extension Field Safety
+     8.4.  Sequence Exhaustion
+   9.  IANA Considerations
+     9.1.  Media Type Registration: application/llm-request+json
+     9.2.  SSE Event Type Registry
+   10. References
+     10.1.  Normative References
+     10.2.  Informative References
+   Appendix A.  JSON Schema for Event Envelope
+   Appendix B.  Observed Protocol Landscape (June 2026)
+   Acknowledgments
+   Authors' Addresses
+
+1.  Introduction
+
+1.1.  Problem Statement
+
+   The AI inference ecosystem is experiencing protocol fragmentation
+   reminiscent of the early web.  Every major vendor has independently
+   defined its own wire format for the same fundamental operation:
+   streaming generated tokens from a model to a client.  Each vendor
+   uses a different combination of application-layer framing and JSON
+   payload schema:
+
+   *  OpenAI streams SSE with JSON payloads using the path
+      choices[0].delta.content for generated text.
+
+   *  Anthropic streams SSE with typed event blocks, placing generated
+      text at delta.text inside content_block_delta events.
+
+   *  Google Gemini streams SSE with JSON payloads using
+      candidates[0].content.parts[0].text.
+
+   *  Microsoft Azure / Copilot uses WebSocket with the SignalR Hub
+      Protocol's [SignalR] proprietary 0x1E record-separator framing.
+
+   *  Cursor and Windsurf (AI coding assistants) use the Connect
+      protocol [Connect] (application/connect+proto) with a 5-byte
+      binary envelope and Protobuf-encoded payloads over HTTP/2.
+
+   The underlying transports, specifically HTTP/2 [RFC9113], HTTP/1.1
+   [RFC9110], WebSocket [RFC6455], and SSE [WHATWG-HTML], are all
+   properly standardized.  The problem exists entirely at the
+   application layer: the JSON schemas, event types, stream lifecycle
+   conventions, and payload structures that ride on top of these
+   transports.
+
+   Additionally, even where vendors use the same sub-protocol, behavior
+   diverges in practice.  For example, Cursor keeps HTTP/2 streams open
+   indefinitely without sending END_STREAM, while Windsurf sends
+   END_STREAM on the same Connect+proto protocol: same framing,
+   different stream lifecycle.
+
+   SSE is used correctly per the W3C specification by most vendors, but
+   nothing in the SSE specification constrains what goes inside the
+   event: and data: fields.  Event type names, JSON field names, nesting
+   structures, and payload schemas are entirely up to each provider.
+
+1.2.  Use Cases
+
+   The absence of a standard wire format for AI inference streaming
+   creates unnecessary cost and complexity across the AI ecosystem.  The
+   following use cases illustrate the breadth of the problem.
+
+1.2.1.  Middleware and Framework Integration
+
+   A significant middleware ecosystem exists between LLM inference
+   providers and application developers, including orchestration
+   frameworks (LangChain, LlamaIndex, Spring AI, Semantic Kernel), SDK
+   abstraction layers (Vercel AI SDK, LiteLLM), and AI gateways
+   (Portkey, Cloudflare AI Gateway).  Each of these components maintains
+   provider-specific streaming response parsers for every supported LLM
+   vendor.
+
+   This parsing logic is stateful and non-trivial: it includes byte-
+   level SSE reassembly, vendor-specific JSON path extraction, event
+   type classification, stream lifecycle management, and reconnection
+   handling.  A standard payload format would allow these components to
+   implement streaming response parsing once, independent of the
+   upstream provider.  Provider-specific configuration (authentication,
+   endpoint URLs, model identifiers) would remain, but the streaming
+   transport layer would be shared.
+
+1.2.2.  New Provider Integration
+
+   When a new inference provider enters the market, middleware
+   frameworks must implement a provider-specific streaming integration
+   before that provider's models are accessible to framework-dependent
+   developers.  Providers with large user bases are typically integrated
+   quickly.  Providers with smaller user bases may experience delays of
+   weeks or months.
+
+   A standard payload format would allow any conforming provider to be
+   consumed by existing middleware frameworks without additional
+   integration effort on either side for the streaming layer.
+
+1.2.3.  Format Proliferation Through Cloud Hosting
+
+   AWS Bedrock, Azure AI Studio, and Google Vertex AI each host third-
+   party models and expose them through proprietary streaming formats
+   distinct from the original provider's public API.
+
+   A standard payload specification would provide a common format for
+   both direct vendor APIs and cloud hosting platforms to converge on,
+   reducing rather than multiplying the number of streaming formats in
+   the ecosystem.
+
+1.2.4.  Content Auditing and Compliance
+
+   The EU AI Act distinguishes between providers (who develop AI
+   systems) and deployers (who use AI systems in their business).
+   Deployers of high-risk AI systems are required to keep automatically
+   generated logs for at least six months, monitor the system's
+   operation, ensure human oversight, and report serious incidents.
+   Deployers using multiple AI providers must meet these obligations
+   across all of them.
+
+   The data required for deployer compliance, specifically what was
+   generated, which model produced it, and how many tokens were
+   consumed, is carried entirely within the streaming payload: generated
+   text in content.delta events, model identification in stream.start
+   events, and token counts in usage events.  A standard payload format
+   enables deployers to build a single logging and audit pipeline that
+   extracts this information from any conforming provider, rather than
+   maintaining provider-specific extraction logic for each LLM vendor in
+   use.
+
+1.2.5.  Observability in Regulated Environments
+
+   Unified observability across LLM providers is available today through
+   third-party gateways that route inference traffic through their
+   infrastructure.  For organizations in regulated sectors (healthcare,
+   finance, government), routing prompts and completions through a
+   third-party service may conflict with data sovereignty and compliance
+   requirements.
+
+   Standard event types and sequence numbers would enable observability
+   directly within the organization's own infrastructure: existing
+   application performance monitoring tools could natively parse LLM
+   streaming events based on a documented specification, without
+   requiring vendor-specific plugins or third-party services in the data
+   path.
+
+1.2.6.  Browser-Based Consumption
+
+   The browser EventSource API provides native support for SSE transport
+   but has no awareness of the JSON payload structure.  Each browser-
+   based AI application currently implements its own response parsing
+   logic per provider.  A standard payload schema would enable a single
+   client-side library to parse streaming responses from any conforming
+   provider.  Authentication is handled in HTTP headers prior to stream
+   establishment and is independent of payload parsing.
+
+1.2.7.  Protocol Stack Completeness
+
+   The Model Context Protocol (MCP) standardizes agent-to-tool
+   interaction under the AI Alliance and Linux Foundation.  Agent-to-
+   agent communication protocols are emerging as separate
+   standardization efforts.  The inference streaming layer, which
+   carries generated content from model endpoints to client
+   applications, sits between the application and these agent
+   interaction protocols.  Without a standard for inference streaming
+   payloads, the protocol architecture contains standardized layers
+   above and below connected by a proprietary, vendor-specific layer in
+   the middle.  This specification addresses that gap.
+
+1.2.8.  HTTP Intermediaries
+
+   Forward proxies, reverse proxies, and security appliances that
+   inspect AI inference traffic for content policy enforcement or audit
+   logging must currently extract generated text from vendor-specific
+   JSON structures at different paths per provider.  A standard payload
+   format with a canonical field for generated text (delta.text) enables
+   these intermediaries to implement a single parser for content
+   extraction across all conforming providers.
+
+1.3.  Scope
+
+   This document addresses Client/Application to LLM inference endpoint
+   streaming, specifically the path from an end-user application (web
+   browser, IDE, mobile app, API client) to an LLM inference endpoint
+   and back.
+
+   The following are explicitly out of scope:
+
+   *  Agent-to-tool interaction (e.g., Model Context Protocol [MCP])
+
+   *  Agent-to-agent communication
+
+   *  Model training traffic
+
+   *  Embedding and batch inference APIs (non-streaming)
+
+1.4.  Design Rationale
+
+   The standard is designed around three principles:
+
+   1.  Keep SSE as the transport.  SSE over HTTP is already the dominant
+       transport for AI inference streaming, used by OpenAI, Anthropic,
+       Google, Cohere, and Mistral.  It works on both HTTP/2 and
+       HTTP/1.1, has broad ecosystem support, and requires no new
+       transport protocol.  A WebTransport [W3C-WEBTRANSPORT] binding
+       MAY be defined in a future document as adoption matures.
+
+   2.  Standardize only the payload.  The transport layer is already
+       standardized.  This document defines only what goes inside the
+       SSE event: and data: fields, specifically the event type taxonomy
+       and JSON envelope schema.
+
+   3.  Preserve vendor extensibility.  Vendors retain full freedom to
+       include proprietary metadata via namespaced extension fields.
+       Conforming parsers MUST ignore unknown fields.
+
+2.  Conventions and Definitions
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   BCP 14 [RFC2119] [RFC8174] when, and only when, they appear in all
+   capitals, as shown here.
+
+   Inference endpoint:  An HTTP endpoint that accepts a prompt and
+      returns a generated completion, typically streamed token-by-token.
+
+   Implementation:  Any software component that produces or consumes LLM
+      inference streams conforming to this specification, including
+      client libraries, server endpoints, API gateways, and
+      orchestration platforms.
+
+   Stream:  A single request-response exchange in which the response is
+      delivered incrementally via SSE events.
+
+   Event envelope:  The JSON object carried in each SSE data: field,
+      conforming to the schema defined in Section 5.2.
+
+   Content delta:  An incremental fragment of generated text delivered
+      in a single event.
+
+3.  Transport Binding
+
+   A conforming inference endpoint:
+
+   *  MUST accept requests via HTTP POST.
+
+   *  MUST deliver streaming responses using Server-Sent Events (SSE) as
+      defined in the WHATWG HTML Living Standard [WHATWG-HTML], Section 
+      "Server-sent events."
+
+   *  MUST use HTTP/2 [RFC9113] or HTTP/1.1 [RFC9110] as the underlying
+      HTTP version.
+
+   *  SHOULD prefer HTTP/2 for its multiplexing and flow-control
+      benefits.
+
+   *  MUST use TLS 1.3 [RFC8446] or later for production deployments.
+
+   SSE over HTTP was chosen because it is already the dominant transport
+   for AI inference streaming.  It works on both HTTP/2 (multiplexed)
+   and HTTP/1.1 (one stream per connection), providing graceful
+   degradation in environments that support only HTTP/1.1.  In contrast,
+   gRPC [gRPC] and Connect+proto mandate HTTP/2 and break in HTTP/1-only
+   environments.
+
+   AI inference streams are characteristically long-lived and open-
+   ended; the server does not set Content-Length and typically does not
+   send HTTP/2 END_STREAM until generation is complete.  This behavior
+   differs from traditional HTTP request-response patterns and may
+   affect timeout and buffering configurations in both clients and
+   infrastructure.  The same pattern is expected on HTTP/3 (QUIC).
+
+4.  Media Types and Request Format
+
+4.1.  Request Media Type
+
+   This document registers the media type application/llm-request+json.
+
+   Sent by the client in the HTTP POST body, this Content-Type indicates
+   that the request payload conforms to the request envelope defined in
+   Section 4.2.  Any component that observes this Content-Type can
+   immediately identify the traffic as LLM inference, enabling automated
+   routing, logging, and processing without hostname-based heuristics.
+
+4.2.  Request Envelope
+
+   The request body is a JSON object.  Its top-level fields are
+   organized into five logical groups: protocol control, conversation
+   history, tool declarations, generation parameters, and extensibility.
+
+     +============+=========+==========+============================+
+     | Field      | Type    | Required | Description                |
+     +============+=========+==========+============================+
+     | version    | string  | REQUIRED | Protocol version.  MUST be |
+     |            |         |          | "1.0".                     |
+     +------------+---------+----------+----------------------------+
+     | stream     | boolean | REQUIRED | MUST be true for           |
+     |            |         |          | streaming.                 |
+     +------------+---------+----------+----------------------------+
+     | model      | string  | REQUIRED | Model identifier.  Opaque  |
+     |            |         |          | string.                    |
+     +------------+---------+----------+----------------------------+
+     | messages   | array   | REQUIRED | Conversation history.  See |
+     |            |         |          | Section 4.3.               |
+     +------------+---------+----------+----------------------------+
+     | tools      | array   | OPTIONAL | Tool/function definitions. |
+     |            |         |          | See Section 4.4.           |
+     +------------+---------+----------+----------------------------+
+     | parameters | object  | OPTIONAL | Generation parameters.     |
+     |            |         |          | See Section 4.5.           |
+     +------------+---------+----------+----------------------------+
+     | metadata   | object  | OPTIONAL | Request metadata.  See     |
+     |            |         |          | Section 4.6.               |
+     +------------+---------+----------+----------------------------+
+     | extensions | object  | OPTIONAL | Vendor extensions.  See    |
+     |            |         |          | Section 4.7.               |
+     +------------+---------+----------+----------------------------+
+
+                                 Table 1
+
+4.3.  Messages (Conversation History)
+
+   The messages field is an ordered array of message objects
+   representing the conversation history.  The model reads this full
+   history to understand context before generating a response.
+
+   +==============+==========+=============+===========================+
+   | Field        | Type     | Required    | Description               |
+   +==============+==========+=============+===========================+
+   | role         | string   | REQUIRED    | One of: "system", "user", |
+   |              |          |             | "assistant", "tool".      |
+   +--------------+----------+-------------+---------------------------+
+   | content      | string   | REQUIRED    | The message content.      |
+   |              | or       |             |                           |
+   |              | array    |             |                           |
+   +--------------+----------+-------------+---------------------------+
+   | name         | string   | OPTIONAL    | Display name for the      |
+   |              |          |             | participant.              |
+   +--------------+----------+-------------+---------------------------+
+   | tool_call_id | string   | CONDITIONAL | REQUIRED when role is     |
+   |              |          |             | "tool".                   |
+   +--------------+----------+-------------+---------------------------+
+
+                                  Table 2
+
+   The role field identifies who produced the message:
+
+   "system":  Instructions that configure the model's behavior for the
+      conversation.  Typically the first message.  Not visible to end
+      users.
+
+   "user":  Input from the end user: the prompt, question, or
+      instruction the model should respond to.
+
+   "assistant":  The model's own prior responses.  Included in multi-
+      turn conversations so the model has context of what it previously
+      generated.
+
+   "tool":  A result returned from a tool invocation.  When the model
+      requests a tool call (via a tool.call event in the response), the
+      client executes the tool locally and sends the result back as a
+      "tool" message in the next request.  The tool_call_id field MUST
+      reference the id from the corresponding tool.call event.
+
+   A typical multi-turn conversation:
+
+   "messages": [
+     {"role": "system",
+      "content": "You are a coding assistant."},
+     {"role": "user",
+      "content": "Write a Python function to sort a list."},
+     {"role": "assistant",
+      "content": "def sort_list(items):\n    return sorted(items)"},
+     {"role": "user",
+      "content": "Now make it sort in reverse order."}
+   ]
+
+4.3.1.  The Content Field
+
+   The content field takes one of two forms depending on whether the
+   message contains only text or includes non-text attachments.
+
+   Text-only messages use a simple string:
+
+   {"role": "user", "content": "What is the capital of France?"}
+
+   Multimodal messages use an array of typed content parts:
+
+   {"role": "user", "content": [
+     {"type": "text", "text": "What is shown in this image?"},
+     {"type": "image", "media_type": "image/png",
+      "data": "<base64-encoded image>"}
+   ]}
+
+       +============+==================+==========================+
+       | Type       | Required Fields  | Description              |
+       +============+==================+==========================+
+       | "text"     | text             | Plain text content.      |
+       +------------+------------------+--------------------------+
+       | "image"    | media_type, data | Base64-encoded image.    |
+       +------------+------------------+--------------------------+
+       | "document" | media_type, data | Base64-encoded document. |
+       +------------+------------------+--------------------------+
+       | "audio"    | media_type, data | Base64-encoded audio.    |
+       +------------+------------------+--------------------------+
+
+                                 Table 3
+
+   When content is a string, it is semantically equivalent to an array
+   containing a single text part.  Implementations MUST support both
+   forms.
+
+4.4.  Tools (Function Declarations)
+
+   The tools field is an optional array of tool definitions.  These are
+   NOT part of the conversation; they are declarations of capabilities
+   that the client can execute locally if the model decides to invoke
+   them.
+
+   The model reads these definitions and, when it determines that a tool
+   would help answer the user's request, emits a tool.call event in the
+   response stream instead of generating text.  The model itself does
+   not execute anything; it outputs a structured request asking the
+   client to run the specified function with the given arguments.
+
+     +=============+========+==========+=============================+
+     | Field       | Type   | Required | Description                 |
+     +=============+========+==========+=============================+
+     | name        | string | REQUIRED | Function name.              |
+     +-------------+--------+----------+-----------------------------+
+     | description | string | REQUIRED | Human-readable description. |
+     +-------------+--------+----------+-----------------------------+
+     | parameters  | object | REQUIRED | JSON Schema for input       |
+     |             |        |          | parameters.                 |
+     +-------------+--------+----------+-----------------------------+
+
+                                  Table 4
+
+   "tools": [
+     {"name": "get_weather",
+      "description": "Get current weather for a city.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {"type": "string",
+                   "description": "City name, e.g. Vienna"},
+          "units": {"type": "string",
+                    "enum": ["celsius", "fahrenheit"]}
+        },
+        "required": ["city"]
+      }}
+   ]
+
+   The complete tool interaction flow is described in Section 4.8.
+
+4.5.  Generation Parameters
+
+   The parameters field contains knobs that control how the model
+   generates its response.
+
+   +================+=========+=======================================+
+   | Field          | Type    | Description                           |
+   +================+=========+=======================================+
+   | max_tokens     | integer | Maximum number of tokens to generate. |
+   +----------------+---------+---------------------------------------+
+   | temperature    | number  | Randomness. 0.0 = deterministic, 1.0  |
+   |                |         | = creative.                           |
+   +----------------+---------+---------------------------------------+
+   | top_p          | number  | Nucleus sampling threshold.           |
+   +----------------+---------+---------------------------------------+
+   | stop_sequences | array   | Strings that immediately end          |
+   |                |         | generation.                           |
+   +----------------+---------+---------------------------------------+
+
+                                 Table 5
+
+   All fields within parameters are OPTIONAL.  Vendors MAY define
+   additional parameters.  Unknown parameters MUST be ignored.
+
+4.6.  Request Metadata
+
+   The metadata field carries request-level information for tracing,
+   billing, and audit.  This data is NOT sent to the model and does NOT
+   influence generation.
+
+   "metadata": {
+     "request_id": "550e8400-e29b-41d4-a716-446655440000",
+     "user_id": "user-12345",
+     "session_id": "sess-67890"
+   }
+
+   The request_id field, if present, SHOULD be echoed in the
+   stream.start and stream.end response events.
+
+4.7.  Vendor Extensions
+
+   The extensions field is an escape hatch for vendor-specific features.
+   Keys MUST be namespaced using the format "vendor:name" to prevent
+   collisions.
+
+   "extensions": {
+     "vendor:openai": {"logprobs": true},
+     "vendor:anthropic": {
+       "thinking": {"type": "enabled",
+                    "budget_tokens": 10000}}
+   }
+
+   Conforming implementations MUST ignore extension namespaces they do
+   not recognize.
+
+4.8.  Tool Interaction Model
+
+   The model is stateless and cannot execute tools itself; it can only
+   emit a structured request for the client to execute a tool on its
+   behalf.
+
+   1.  The client sends a request with messages and tools.
+
+   2.  The model emits a tool.call event with the tool name and
+       arguments, followed by content.stop with stop_reason "tool_use".
+
+   3.  The client executes the named function locally.
+
+   4.  The client sends a new request with the original history, the
+       assistant's tool call, and a "tool" role message with the result.
+
+   5.  The model reads the tool result and generates its final text
+       response.
+
+   Request 1:
+   {"messages": [{"role": "user",
+     "content": "What is the weather in Vienna?"}],
+    "tools": [{"name": "get_weather", ...}]}
+
+   Response 1:
+   event: tool.call
+   data: {"type":"tool.call","id":"call_1",
+     "name":"get_weather",
+     "arguments":"{\"city\":\"Vienna\"}"}
+   event: content.stop
+   data: {"type":"content.stop",
+     "stop_reason":"tool_use"}
+
+   Client executes get_weather("Vienna"), gets result.
+
+   Request 2:
+   {"messages": [
+     {"role": "user",
+      "content": "What is the weather in Vienna?"},
+     {"role": "assistant", "content": null,
+      "tool_calls": [{"id": "call_1",
+        "name": "get_weather",
+        "arguments": "{\"city\":\"Vienna\"}"}]},
+     {"role": "tool", "tool_call_id": "call_1",
+      "content": "Vienna: 24C, sunny"}],
+    "tools": [{"name": "get_weather", ...}]}
+
+   Response 2:
+   event: content.delta
+   data: {"type":"content.delta",
+     "delta":{"text":"The weather in Vienna is 24C."}}
+
+   The tool definitions travel with every request because the model is
+   stateless.
+
+4.9.  Response Media Type
+
+   The SSE response uses the standard text/event-stream media type.
+   Conformance is signaled by the combination of application/llm-
+   request+json on the request and a stream.start event as the first
+   event in the response.
+
+5.  Response Streaming Format
+
+   The response is delivered as a Server-Sent Events (SSE) stream over
+   HTTP.
+
+5.1.  SSE Event Framing
+
+   Each event on the wire consists of field lines followed by a blank
+   line:
+
+   event: <event-type>\n
+   data: <JSON event envelope>\n
+   \n
+
+   The blank line (\n\n) is the event boundary.  The HTTP transport may
+   split bytes arbitrarily across frames or chunks; the SSE layer
+   reassembles them.
+
+   HTTP layer:  Delivers raw bytes (DATA frames / chunks)
+                     |
+   SSE layer:   Reassembles lines, uses \n\n as boundary
+                     |
+   This spec:   Parses JSON envelope from data: field
+
+   The following constraints MUST be observed:
+
+   *  Each SSE event MUST contain exactly one complete, valid JSON
+      object in its data: field.
+
+   *  A JSON event envelope MUST NOT span multiple SSE events.
+
+   *  An endpoint MUST NOT emit partial JSON that requires a subsequent
+      SSE event to complete.
+
+5.2.  Event Envelope
+
+   Every event carries a JSON object with three common fields:
+
+    +=======+=========+==========+===================================+
+    | Field | Type    | Required | Description                       |
+    +=======+=========+==========+===================================+
+    | v     | string  | REQUIRED | Protocol version.  MUST be "1.0". |
+    +-------+---------+----------+-----------------------------------+
+    | seq   | integer | REQUIRED | Zero-based, monotonically         |
+    |       |         |          | increasing.                       |
+    +-------+---------+----------+-----------------------------------+
+    | type  | string  | REQUIRED | Event type.  MUST match SSE       |
+    |       |         |          | event: field.                     |
+    +-------+---------+----------+-----------------------------------+
+
+                                 Table 6
+
+   The envelope follows a TLV-style structure:
+
+   T (Type):  The SSE event: field.  Identifies the event type without
+      parsing JSON.
+
+   L (Length):  Implicit.  The SSE \n\n boundary defines the extent of
+      the JSON body.  See Section 6.
+
+   V (Value):  The JSON event envelope in the data: field.
+
+   Conforming parsers MUST ignore unknown fields (forward
+   compatibility).
+
+5.2.1.  Sequence Numbers
+
+   The seq field is zero-based, incrementing by one per event.
+   stream.start MUST have seq 0.
+
+   1.  Gap detection: seq values 0, 1, 2, 5 indicates events 3 and 4
+       were lost.
+
+   2.  Ordering: provides canonical ordering when events are buffered.
+
+5.3.  Event Types
+
+   +===============+============+=====================================+
+   | Event Type    | Direction  | Purpose                             |
+   +===============+============+=====================================+
+   | stream.start  | First      | Stream initiation, request metadata |
+   +---------------+------------+-------------------------------------+
+   | content.delta | Repeated   | Incremental text fragment           |
+   +---------------+------------+-------------------------------------+
+   | content.stop  | Once/block | End of content block with stop      |
+   |               |            | reason                              |
+   +---------------+------------+-------------------------------------+
+   | tool.call     | Zero or    | Model requests tool invocation      |
+   |               | more       |                                     |
+   +---------------+------------+-------------------------------------+
+   | usage         | One or     | Token consumption                   |
+   |               | more       |                                     |
+   +---------------+------------+-------------------------------------+
+   | error         | Zero or    | Generation error                    |
+   |               | one        |                                     |
+   +---------------+------------+-------------------------------------+
+   | stream.end    | Last       | Clean stream termination            |
+   +---------------+------------+-------------------------------------+
+
+                                 Table 7
+
+5.3.1.  stream.start
+
+   MUST be the first event.  Signals the endpoint has accepted the
+   request.
+
+   +============+=========+==========+================================+
+   | Field      | Type    | Required | Description                    |
+   +============+=========+==========+================================+
+   | v          | string  | REQUIRED | "1.0"                          |
+   +------------+---------+----------+--------------------------------+
+   | seq        | integer | REQUIRED | MUST be 0.                     |
+   +------------+---------+----------+--------------------------------+
+   | type       | string  | REQUIRED | "stream.start"                 |
+   +------------+---------+----------+--------------------------------+
+   | request_id | string  | OPTIONAL | Echoed from request metadata.  |
+   +------------+---------+----------+--------------------------------+
+   | model      | string  | REQUIRED | Model generating the response. |
+   +------------+---------+----------+--------------------------------+
+   | created    | integer | REQUIRED | Unix timestamp (seconds).      |
+   +------------+---------+----------+--------------------------------+
+
+                                 Table 8
+
+   event: stream.start
+   data: {"v":"1.0","seq":0,"type":"stream.start",
+     "request_id":"550e8400-...",
+     "model":"example-model","created":1749292800}
+
+5.3.2.  content.delta
+
+   Carries an incremental text fragment.  Most frequent event in a
+   stream.
+
+   +=======+=========+==========+=====================================+
+   | Field | Type    | Required | Description                         |
+   +=======+=========+==========+=====================================+
+   | v     | string  | REQUIRED | "1.0"                               |
+   +-------+---------+----------+-------------------------------------+
+   | seq   | integer | REQUIRED | Sequence number.                    |
+   +-------+---------+----------+-------------------------------------+
+   | type  | string  | REQUIRED | "content.delta"                     |
+   +-------+---------+----------+-------------------------------------+
+   | index | integer | REQUIRED | Content block index. 0 for primary. |
+   +-------+---------+----------+-------------------------------------+
+   | role  | string  | REQUIRED | "assistant".                        |
+   +-------+---------+----------+-------------------------------------+
+   | delta | object  | REQUIRED | Contains incremental content.       |
+   +-------+---------+----------+-------------------------------------+
+
+                                 Table 9
+
+   delta.text (string, REQUIRED):  The generated text fragment.  This is
+      the canonical field for generated text: the single location where
+      generated content always appears, regardless of vendor.
+      Standardizing this path is the primary goal of this specification.
+
+   event: content.delta
+   data: {"v":"1.0","seq":1,"type":"content.delta",
+     "index":0,"role":"assistant",
+     "delta":{"text":"The weather in Vienna"}}
+
+   event: content.delta
+   data: {"v":"1.0","seq":2,"type":"content.delta",
+     "index":0,"role":"assistant",
+     "delta":{"text":" is currently 24C"}}
+
+   event: content.delta
+   data: {"v":"1.0","seq":3,"type":"content.delta",
+     "index":0,"role":"assistant",
+     "delta":{"text":" and sunny."}}
+
+   Concatenating delta.text from seq 1 through 3 produces: "The weather
+   in Vienna is currently 24C and sunny."
+
+5.3.3.  content.stop
+
+   Signals the end of a content block.
+
+   +=============+=========+==========+===============================+
+   | Field       | Type    | Required | Description                   |
+   +=============+=========+==========+===============================+
+   | v           | string  | REQUIRED | "1.0"                         |
+   +-------------+---------+----------+-------------------------------+
+   | seq         | integer | REQUIRED | Sequence number.              |
+   +-------------+---------+----------+-------------------------------+
+   | type        | string  | REQUIRED | "content.stop"                |
+   +-------------+---------+----------+-------------------------------+
+   | index       | integer | REQUIRED | Block index being terminated. |
+   +-------------+---------+----------+-------------------------------+
+   | stop_reason | string  | REQUIRED | Why generation stopped.       |
+   +-------------+---------+----------+-------------------------------+
+
+                                 Table 10
+
+   stop_reason values:
+
+   "end_turn":  The model finished its response naturally.
+
+   "max_tokens":  Generation reached the max_tokens limit.
+
+   "tool_use":  The model is requesting a tool invocation.
+
+   "content_filter":  The endpoint's safety system terminated
+      generation.
+
+5.3.4.  tool.call
+
+   Emitted when the model determines a tool invocation would help.  The
+   model does not execute the tool; it outputs a structured request for
+   the client.  See Section 4.8.
+
+    +===========+=========+==========+===============================+
+    | Field     | Type    | Required | Description                   |
+    +===========+=========+==========+===============================+
+    | v         | string  | REQUIRED | "1.0"                         |
+    +-----------+---------+----------+-------------------------------+
+    | seq       | integer | REQUIRED | Sequence number.              |
+    +-----------+---------+----------+-------------------------------+
+    | type      | string  | REQUIRED | "tool.call"                   |
+    +-----------+---------+----------+-------------------------------+
+    | index     | integer | REQUIRED | Content block index.          |
+    +-----------+---------+----------+-------------------------------+
+    | id        | string  | REQUIRED | Unique invocation identifier. |
+    +-----------+---------+----------+-------------------------------+
+    | name      | string  | REQUIRED | Function name from request    |
+    |           |         |          | tools.                        |
+    +-----------+---------+----------+-------------------------------+
+    | arguments | string  | REQUIRED | JSON-encoded function         |
+    |           |         |          | arguments.                    |
+    +-----------+---------+----------+-------------------------------+
+
+                                 Table 11
+
+5.3.5.  usage
+
+   Reports token consumption for billing, cost tracking, and quota
+   management.
+
+      +===============+=========+==========+========================+
+      | Field         | Type    | Required | Description            |
+      +===============+=========+==========+========================+
+      | v             | string  | REQUIRED | "1.0"                  |
+      +---------------+---------+----------+------------------------+
+      | seq           | integer | REQUIRED | Sequence number.       |
+      +---------------+---------+----------+------------------------+
+      | type          | string  | REQUIRED | "usage"                |
+      +---------------+---------+----------+------------------------+
+      | input_tokens  | integer | REQUIRED | Tokens in the request. |
+      +---------------+---------+----------+------------------------+
+      | output_tokens | integer | REQUIRED | Tokens generated.      |
+      +---------------+---------+----------+------------------------+
+
+                                  Table 12
+
+   MAY appear mid-stream or near stream end.  At least one SHOULD be
+   emitted per stream.
+
+5.3.6.  error
+
+   Signals a generation error.  After an error, the endpoint SHOULD send
+   stream.end.
+
+      +=========+=========+==========+==============================+
+      | Field   | Type    | Required | Description                  |
+      +=========+=========+==========+==============================+
+      | v       | string  | REQUIRED | "1.0"                        |
+      +---------+---------+----------+------------------------------+
+      | seq     | integer | REQUIRED | Sequence number.             |
+      +---------+---------+----------+------------------------------+
+      | type    | string  | REQUIRED | "error"                      |
+      +---------+---------+----------+------------------------------+
+      | code    | string  | REQUIRED | Machine-readable error code. |
+      +---------+---------+----------+------------------------------+
+      | message | string  | REQUIRED | Human-readable description.  |
+      +---------+---------+----------+------------------------------+
+
+                                  Table 13
+
+   Error codes: "rate_limited", "context_length_exceeded",
+   "content_filtered", "internal_error", "overloaded".
+
+5.3.7.  stream.end
+
+   MUST be the last event.  After stream.end, no further events on this
+   stream.
+
+       +============+=========+==========+=========================+
+       | Field      | Type    | Required | Description             |
+       +============+=========+==========+=========================+
+       | v          | string  | REQUIRED | "1.0"                   |
+       +------------+---------+----------+-------------------------+
+       | seq        | integer | REQUIRED | Final sequence number.  |
+       +------------+---------+----------+-------------------------+
+       | type       | string  | REQUIRED | "stream.end"            |
+       +------------+---------+----------+-------------------------+
+       | request_id | string  | OPTIONAL | Echoed for correlation. |
+       +------------+---------+----------+-------------------------+
+
+                                  Table 14
+
+5.4.  Stream Lifecycle
+
+   1.  The stream begins with exactly one stream.start (seq 0).
+
+   2.  Zero or more content.delta events deliver text incrementally.
+
+   3.  Zero or more tool.call events request tool invocations.
+
+   4.  Zero or more usage events report token consumption.
+
+   5.  Each content block is terminated by content.stop.
+
+   6.  If an error occurs, an error event is emitted.
+
+   7.  The stream ends with exactly one stream.end.
+
+          POST request
+               |
+         stream.start (seq=0)
+               |
+          STREAMING
+         /    |    \
+   content.delta tool.call usage
+         \    |    /
+       content.stop | error
+               |
+          stream.end
+               |
+            CLOSED
+
+5.5.  Complete Example
+
+   HTTP/2 200 OK
+   Content-Type: text/event-stream
+   Cache-Control: no-cache
+
+   event: stream.start
+   data: {"v":"1.0","seq":0,
+     "type":"stream.start",
+     "request_id":"550e8400-...",
+     "model":"example-model",
+     "created":1749292800}
+
+   event: content.delta
+   data: {"v":"1.0","seq":1,
+     "type":"content.delta",
+     "index":0,"role":"assistant",
+     "delta":{"text":"The"}}
+
+   event: content.delta
+   data: {"v":"1.0","seq":2,
+     "type":"content.delta",
+     "index":0,"role":"assistant",
+     "delta":{"text":" weather"}}
+
+   event: content.delta
+   data: {"v":"1.0","seq":3,
+     "type":"content.delta",
+     "index":0,"role":"assistant",
+     "delta":{"text":" in Vienna"}}
+
+   event: content.delta
+   data: {"v":"1.0","seq":4,
+     "type":"content.delta",
+     "index":0,"role":"assistant",
+     "delta":{"text":" is 24C and sunny."}}
+
+   event: content.stop
+   data: {"v":"1.0","seq":5,
+     "type":"content.stop",
+     "index":0,"stop_reason":"end_turn"}
+
+   event: usage
+   data: {"v":"1.0","seq":6,
+     "type":"usage",
+     "input_tokens":42,"output_tokens":8}
+
+   event: stream.end
+   data: {"v":"1.0","seq":7,
+     "type":"stream.end",
+     "request_id":"550e8400-..."}
+
+6.  Framing Design Trade-off
+
+6.1.  SSE Text-Based Framing (This Specification)
+
+   SSE delimits events with \n\n.  The parser must scan the byte stream
+   to locate each boundary.  This is O(n) per event.
+
+6.2.  Length-Prefixed Binary Framing (Alternative)
+
+   A binary approach (e.g., gRPC's [gRPC] 5-byte envelope) prefixes each
+   message with a type byte and 4-byte length.  The parser reads the
+   header and jumps directly to the next message.  This is O(1) per
+   boundary.
+
+6.3.  Rationale for SSE
+
+   1.  Compatibility: SSE is supported natively by browser EventSource
+       and every major HTTP library.  Binary framing would require
+       custom parsers.
+
+   2.  Existing deployment: The five major SSE-based LLM providers would
+       need minimal changes to adopt a standard JSON schema.  Binary
+       framing would require re-engineering their streaming pipeline.
+
+   3.  Debuggability: SSE events are human-readable in browser developer
+       tools, curl, and log files.
+
+   4.  Incremental adoption: The payload schema is transport-
+       independent.  The same event types and JSON envelope can be
+       carried over SSE or a future binary binding without changes.
+
+   A future companion document MAY define a binary transport binding,
+   for example over WebTransport [W3C-WEBTRANSPORT], that provides
+   length-prefixed framing while reusing the same event types and JSON
+   envelope.
+
+7.  Backward Compatibility
+
+7.1.  API Gateway Translation
+
+   An API gateway can accept vendor-specific requests, forward them to
+   the upstream provider in their native format, and translate the
+   response stream into the standard format before delivering it to the
+   client.
+
+7.2.  Content-Type Negotiation
+
+   If a client sends Content-Type: application/llm-request+json and the
+   endpoint does not support the standard, it SHOULD return 415
+   Unsupported Media Type, allowing the client to fall back.
+
+7.3.  Dual-Format Endpoints
+
+   A vendor MAY support both formats, selected by the request Content-
+   Type or an Accept header:
+
+   Accept: text/event-stream; profile="llm-stream-1.0"
+
+8.  Security Considerations
+
+8.1.  Prompt Confidentiality
+
+   Prompts in application/llm-request+json requests may contain highly
+   sensitive data.  Any system that logs or processes these requests
+   MUST apply appropriate confidentiality protections.
+
+8.2.  Tool-Call Abuse
+
+   A compromised or adversarial endpoint could emit tool.call events
+   invoking sensitive tools.  Client implementations SHOULD validate
+   tool.call events against the set of tools declared in the original
+   request and SHOULD require user confirmation before executing tool
+   invocations with side effects.
+
+8.3.  Extension Field Safety
+
+   The extensions field allows vendor-specific data.  Implementations
+   SHOULD NOT interpret or execute extension values from untrusted
+   sources.
+
+8.4.  Sequence Exhaustion
+
+   The seq field is an integer.  Implementations SHOULD use 64-bit
+   integers.  A stream exceeding 2^53 events (the safe integer limit in
+   JSON/JavaScript) is pathological and SHOULD be terminated.
+
+9.  IANA Considerations
+
+9.1.  Media Type Registration: application/llm-request+json
+
+   Type name:  application
+
+   Subtype name:  llm-request+json
+
+   Required parameters:  None
+
+   Optional parameters:  version (default: "1.0")
+
+   Encoding considerations:  8bit (UTF-8 JSON)
+
+   Intended usage:  COMMON
+
+9.2.  SSE Event Type Registry
+
+   This document requests creation of an IANA registry for LLM-Stream
+   SSE event types:
+
+                     +===============+===============+
+                     | Event Type    | Reference     |
+                     +===============+===============+
+                     | stream.start  | Section 5.3.1 |
+                     +---------------+---------------+
+                     | content.delta | Section 5.3.2 |
+                     +---------------+---------------+
+                     | content.stop  | Section 5.3.3 |
+                     +---------------+---------------+
+                     | tool.call     | Section 5.3.4 |
+                     +---------------+---------------+
+                     | usage         | Section 5.3.5 |
+                     +---------------+---------------+
+                     | error         | Section 5.3.6 |
+                     +---------------+---------------+
+                     | stream.end    | Section 5.3.7 |
+                     +---------------+---------------+
+
+                                  Table 15
+
+   New event types are registered via Specification Required [RFC8126].
+
+10.  References
+
+10.1.  Normative References
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119,
+              DOI 10.17487/RFC2119, March 1997,
+              <https://www.rfc-editor.org/rfc/rfc2119>.
+
+   [RFC6455]  Fette, I. and A. Melnikov, "The WebSocket Protocol",
+              RFC 6455, DOI 10.17487/RFC6455, December 2011,
+              <https://www.rfc-editor.org/rfc/rfc6455>.
+
+   [RFC8126]  Cotton, M., Leiba, B., and T. Narten, "Guidelines for
+              Writing an IANA Considerations Section in RFCs", BCP 26,
+              RFC 8126, DOI 10.17487/RFC8126, June 2017,
+              <https://www.rfc-editor.org/rfc/rfc8126>.
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC
+              2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174,
+              May 2017, <https://www.rfc-editor.org/rfc/rfc8174>.
+
+   [RFC8446]  Rescorla, E., "The Transport Layer Security (TLS) Protocol
+              Version 1.3", RFC 8446, DOI 10.17487/RFC8446, August 2018,
+              <https://www.rfc-editor.org/rfc/rfc8446>.
+
+   [RFC9110]  Fielding, R., Ed., Nottingham, M., Ed., and J. Reschke,
+              Ed., "HTTP Semantics", STD 97, RFC 9110,
+              DOI 10.17487/RFC9110, June 2022,
+              <https://www.rfc-editor.org/rfc/rfc9110>.
+
+   [RFC9113]  Thomson, M., Ed. and C. Benfield, Ed., "HTTP/2", RFC 9113,
+              DOI 10.17487/RFC9113, June 2022,
+              <https://www.rfc-editor.org/rfc/rfc9113>.
+
+   [WHATWG-HTML]
+              WHATWG, "HTML Living Standard - Server-sent events", n.d.,
+              <https://html.spec.whatwg.org/multipage/server-sent-
+              events.html>.
+
+10.2.  Informative References
+
+   [Connect]  Buf Technologies, "Connect Protocol Specification", n.d.,
+              <https://connectrpc.com/docs/protocol>.
+
+   [gRPC]     Google, "gRPC over HTTP/2", n.d.,
+              <https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-
+              HTTP2.md>.
+
+   [MCP]      Anthropic / AAIF, "Model Context Protocol Specification",
+              n.d., <https://spec.modelcontextprotocol.io>.
+
+   [SignalR]  Microsoft, "SignalR Hub Protocol", n.d.,
+              <https://github.com/dotnet/aspnetcore/blob/main/src/SignalR/
+              docs/specs/HubProtocol.md>.
+
+   [W3C-WEBTRANSPORT]
+              W3C, "WebTransport", n.d.,
+              <https://www.w3.org/TR/webtransport/>.
+
+Appendix A.  JSON Schema for Event Envelope
+
+   {
+     "$schema": "https://json-schema.org/draft/2020-12/schema",
+     "$id": "urn:ietf:params:llm-stream:event-envelope:1.0",
+     "type": "object",
+     "required": ["v", "seq", "type"],
+     "properties": {
+       "v": {"type": "string", "const": "1.0"},
+       "seq": {"type": "integer", "minimum": 0},
+       "type": {
+         "type": "string",
+         "enum": ["stream.start", "content.delta",
+                  "content.stop", "tool.call", "usage",
+                  "error", "stream.end"]
+       }
+     },
+     "additionalProperties": true
+   }
+
+Appendix B.  Observed Protocol Landscape (June 2026)
+
+   +=================+==============+====================+=============+
+   | Provider        | Transport    | Framing            | API Type    |
+   +=================+==============+====================+=============+
+   | OpenAI          | HTTP/2 + SSE | SSE data: lines    | Public      |
+   +-----------------+--------------+--------------------+-------------+
+   | Anthropic       | HTTP/2 + SSE | SSE event: + data: | Public      |
+   +-----------------+--------------+--------------------+-------------+
+   | Google Gemini   | HTTP/2 + SSE | SSE data: lines    | Public      |
+   +-----------------+--------------+--------------------+-------------+
+   | Microsoft/      | WebSocket    | SignalR 0x1E       | Proprietary |
+   | Azure           |              |                    |             |
+   +-----------------+--------------+--------------------+-------------+
+   | Cursor/         | HTTP/2       | Connect binary     | Proprietary |
+   | Windsurf        |              |                    |             |
+   +-----------------+--------------+--------------------+-------------+
+
+                                  Table 16
+
+Acknowledgments
+
+   TODO acknowledge.
+
+Authors' Addresses
+
+   Yaroslav Rosomakho
+   Zscaler
+   Email: yrosomakho@zscaler.com
+
+
+   Santosh Pallagatti
+   Zscaler
+   Email: santosh.pallagatti@gmail.com
